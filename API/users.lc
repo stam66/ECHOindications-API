@@ -1,0 +1,133 @@
+<?lc
+-- Users CRUD API - Using LiveCode Arrays
+
+include "lib/db-functions.lc"
+
+on startup
+  put header "Content-Type: application/json"
+  
+  put $_GET["action"] into tAction
+  put $_GET["id"] into tID
+  put $_POST_RAW into tPostData
+  
+  put dbConnect() into tConnectionID
+  if tConnectionID begins with "ERROR:" then
+    put jsonError(tConnectionID)
+    exit startup
+  end if
+  
+  switch tAction
+    case "read"
+      put handleReadUser(tConnectionID, tID) into tResponse
+      break
+    case "create"
+      put handleCreateUser(tConnectionID, tPostData) into tResponse
+      break
+    case "update"
+      put handleUpdateUser(tConnectionID, tPostData) into tResponse
+      break
+    case "delete"
+      put handleDeleteUser(tConnectionID, tID) into tResponse
+      break
+    case "list"
+      put handleListUsers(tConnectionID) into tResponse
+      break
+    default
+      put jsonError("Invalid action. Use: read, create, update, delete, list") into tResponse
+  end switch
+  
+  revCloseDatabase tConnectionID
+  put tResponse
+end startup
+
+startup
+
+function handleListUsers pConnectionID
+  put "SELECT id, username, email, is_active, title, name, created_at FROM users WHERE is_active = 1 ORDER BY name" into tSQL
+  put revDataFromQuery(tab, return, pConnectionID, tSQL) into tData
+  
+  if tData begins with "revdberr" then
+    return jsonError(tData)
+  end if
+  
+  put 1 into tIndex
+  repeat for each line tLine in tData
+    split tLine by tab
+    
+    put tLine[1] into tUsers[tIndex]["id"]
+    put tLine[2] into tUsers[tIndex]["username"]
+    put tLine[3] into tUsers[tIndex]["email"]
+    put tLine[4] into tUsers[tIndex]["is_active"]
+    put tLine[5] into tUsers[tIndex]["title"]
+    put tLine[6] into tUsers[tIndex]["name"]
+    put tLine[7] into tUsers[tIndex]["created_at"]
+    
+    add 1 to tIndex
+  end repeat
+  
+  return jsonSuccess(tUsers)
+end handleListUsers
+
+function handleReadUser pConnectionID, pID
+  if pID is empty then
+    return jsonError("User ID required")
+  end if
+  
+  -- Validate ID to prevent SQL injection
+  put validateNumericID(pID) into tSafeID
+  if tSafeID is empty then
+    return jsonError("Invalid user ID")
+  end if
+  
+  put "SELECT id, username, email, is_active, title, name, OTP, created_at, updated_at FROM users WHERE id =" && tSafeID into tSQL
+  put revDataFromQuery(tab, return, pConnectionID, tSQL) into tData
+  
+  if tData begins with "revdberr" or tData is empty then
+    return jsonError("User not found")
+  end if
+  
+  split tData by tab
+  
+  put tData[1] into tUser["id"]
+  put tData[2] into tUser["username"]
+  put tData[3] into tUser["email"]
+  put tData[4] into tUser["is_active"]
+  put tData[5] into tUser["title"]
+  put tData[6] into tUser["name"]
+  put tData[7] into tUser["OTP"]
+  put tData[8] into tUser["created_at"]
+  put tData[9] into tUser["updated_at"]
+  
+  return jsonSuccess(tUser)
+end handleReadUser
+
+function handleCreateUser pConnectionID, pPostData
+  return jsonError("Create user not yet implemented")
+end handleCreateUser
+
+function handleUpdateUser pConnectionID, pPostData
+  return jsonError("Update user not yet implemented")
+end handleUpdateUser
+
+function handleDeleteUser pConnectionID, pID
+  if pID is empty then
+    return jsonError("User ID required")
+  end if
+  
+  -- Validate ID to prevent SQL injection
+  put validateNumericID(pID) into tSafeID
+  if tSafeID is empty then
+    return jsonError("Invalid user ID")
+  end if
+  
+  put "UPDATE users SET is_active = 0, updated_at = NOW() WHERE id =" && tSafeID into tSQL
+  revExecuteSQL pConnectionID, tSQL
+  
+  if the result is not empty then
+    return jsonError(the result)
+  else
+    put "User deactivated successfully" into tResult
+    return jsonSuccess(tResult)
+  end if
+end handleDeleteUser
+?>

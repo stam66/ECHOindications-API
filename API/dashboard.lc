@@ -1,0 +1,170 @@
+<?lc
+-- Dashboard API - Using LiveCode Arrays
+
+include "lib/db-functions.lc"
+
+on startup
+  put header "Content-Type: application/json"
+  
+  put $_GET["action"] into tAction
+  put $_GET["username"] into tUsername
+  
+  put dbConnect() into tConnectionID
+  if tConnectionID begins with "ERROR:" then
+    put jsonError(tConnectionID)
+    exit startup
+  end if
+  
+  switch tAction
+    case "stats"
+      put handleDashboardStats(tConnectionID) into tResponse
+      break
+    case "user_activity"
+      put handleUserActivity(tConnectionID, tUsername) into tResponse
+      break
+    case "recent_changes"
+      put handleRecentChanges(tConnectionID) into tResponse
+      break
+    default
+      put jsonError("Invalid action. Use: stats, user_activity, recent_changes") into tResponse
+  end switch
+  
+  revCloseDatabase tConnectionID
+  put tResponse
+end startup
+
+startup
+
+function handleDashboardStats pConnectionID
+  -- Get total indications
+  put "SELECT COUNT(*) FROM indications" into tSQL
+  put revDataFromQuery(tab, return, pConnectionID, tSQL) into tData
+  put tData into tStats["total_indications"]
+  
+  -- Get active contexts
+  put "SELECT COUNT(*) FROM contexts WHERE is_active = 1" into tSQL
+  put revDataFromQuery(tab, return, pConnectionID, tSQL) into tData
+  put tData into tStats["active_contexts"]
+  
+  -- Get active users
+  put "SELECT COUNT(*) FROM users WHERE is_active = 1" into tSQL
+  put revDataFromQuery(tab, return, pConnectionID, tSQL) into tData
+  put tData into tStats["active_users"]
+  
+  -- Get new issues
+  put "SELECT COUNT(*) FROM issues WHERE status = 'New'" into tSQL
+  put revDataFromQuery(tab, return, pConnectionID, tSQL) into tData
+  put tData into tStats["new_issues"]
+  
+  -- Get in progress issues
+  put "SELECT COUNT(*) FROM issues WHERE status = 'In progress'" into tSQL
+  put revDataFromQuery(tab, return, pConnectionID, tSQL) into tData
+  put tData into tStats["in_progress_issues"]
+  
+  -- Get recent activity (last 7 days)
+  put "SELECT COUNT(*) FROM audit WHERE audit_timestamp >= DATE_SUB(NOW(), INTERVAL 7 DAY)" into tSQL
+  put revDataFromQuery(tab, return, pConnectionID, tSQL) into tData
+  put tData into tStats["recent_activity_7days"]
+  
+  -- Get indications by urgency
+  put "SELECT urgency, COUNT(*) as count FROM indications GROUP BY urgency" into tSQL
+  put revDataFromQuery(tab, return, pConnectionID, tSQL) into tData
+  
+  repeat for each line tLine in tData
+    split tLine by tab
+    put tLine[2] into tStats["indications_by_urgency"][tLine[1]]
+  end repeat
+  
+  -- Get indications by primary care status
+  put "SELECT primary_care, COUNT(*) as count FROM indications GROUP BY primary_care" into tSQL
+  put revDataFromQuery(tab, return, pConnectionID, tSQL) into tData
+  
+  repeat for each line tLine in tData
+    split tLine by tab
+    put tLine[2] into tStats["indications_by_primary_care"][tLine[1]]
+  end repeat
+  
+  return jsonSuccess(tStats)
+end handleDashboardStats
+
+function handleUserActivity pConnectionID, pUsername
+  if pUsername is empty then
+    return jsonError("Username required")
+  end if
+  
+  put "SELECT a.id, a.audit_timestamp, a.audit_table, a.audit_primarykey," into tSQL
+  put " a.action, a.changed_fields," after tSQL
+  put " CASE" after tSQL
+  put "   WHEN a.audit_table = 'indications' THEN (SELECT title FROM indications WHERE id = a.audit_primarykey)" after tSQL
+  put "   WHEN a.audit_table = 'contexts' THEN (SELECT name FROM contexts WHERE id = a.audit_primarykey)" after tSQL
+  put "   WHEN a.audit_table = 'issues' THEN (SELECT CONCAT('Issue #', id) FROM issues WHERE id = a.audit_primarykey)" after tSQL
+  put "   ELSE 'Unknown'" after tSQL
+  put " END as record_name" after tSQL
+  put " FROM audit a" after tSQL
+  put " WHERE a.audit_user = '" & sqlEscape(pUsername) & "'" after tSQL
+  put " ORDER BY a.audit_timestamp DESC" after tSQL
+  put " LIMIT 20" after tSQL
+  
+  put revDataFromQuery(tab, return, pConnectionID, tSQL) into tData
+  
+  if tData begins with "revdberr" then
+    return jsonError(tData)
+  end if
+  
+  put 1 into tIndex
+  repeat for each line tLine in tData
+    split tLine by tab
+    
+    put tLine[1] into tActivity[tIndex]["id"]
+    put tLine[2] into tActivity[tIndex]["timestamp"]
+    put tLine[3] into tActivity[tIndex]["table"]
+    put tLine[4] into tActivity[tIndex]["record_id"]
+    put tLine[5] into tActivity[tIndex]["action"]
+    put tLine[6] into tActivity[tIndex]["changed_fields"]
+    put tLine[7] into tActivity[tIndex]["record_name"]
+    
+    add 1 to tIndex
+  end repeat
+  
+  return jsonSuccess(tActivity)
+end handleUserActivity
+
+function handleRecentChanges pConnectionID
+  put "SELECT a.id, a.audit_timestamp, a.audit_user, u.name as user_name," into tSQL
+  put " a.audit_table, a.audit_primarykey, a.action," after tSQL
+  put " CASE" after tSQL
+  put "   WHEN a.audit_table = 'indications' THEN (SELECT title FROM indications WHERE id = a.audit_primarykey)" after tSQL
+  put "   WHEN a.audit_table = 'contexts' THEN (SELECT name FROM contexts WHERE id = a.audit_primarykey)" after tSQL
+  put "   WHEN a.audit_table = 'issues' THEN (SELECT CONCAT('Issue #', id) FROM issues WHERE id = a.audit_primarykey)" after tSQL
+  put "   ELSE 'Unknown'" after tSQL
+  put " END as record_name" after tSQL
+  put " FROM audit a" after tSQL
+  put " LEFT JOIN users u ON a.audit_user = u.username" after tSQL
+  put " ORDER BY a.audit_timestamp DESC" after tSQL
+  put " LIMIT 50" after tSQL
+  
+  put revDataFromQuery(tab, return, pConnectionID, tSQL) into tData
+  
+  if tData begins with "revdberr" then
+    return jsonError(tData)
+  end if
+  
+  put 1 into tIndex
+  repeat for each line tLine in tData
+    split tLine by tab
+    
+    put tLine[1] into tChanges[tIndex]["id"]
+    put tLine[2] into tChanges[tIndex]["timestamp"]
+    put tLine[3] into tChanges[tIndex]["username"]
+    put tLine[4] into tChanges[tIndex]["user_name"]
+    put tLine[5] into tChanges[tIndex]["table"]
+    put tLine[6] into tChanges[tIndex]["record_id"]
+    put tLine[7] into tChanges[tIndex]["action"]
+    put tLine[8] into tChanges[tIndex]["record_name"]
+    
+    add 1 to tIndex
+  end repeat
+  
+  return jsonSuccess(tChanges)
+end handleRecentChanges
+?>

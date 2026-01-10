@@ -1,0 +1,351 @@
+<?lc
+-- ============================================================================
+-- DATABASE HELPER FUNCTIONS FOR ECHOINDICATIONS API
+-- ============================================================================
+
+-- Include PhotonJSON library (pure LiveCode, no externals)
+include "photon-library.lc"
+
+-- Include database configuration (git-ignored file)
+include "settings.lc"
+
+
+
+-- ============================================================================
+-- DATABASE CONNECTION
+-- ============================================================================
+
+-- Database connection function
+-- Uses configuration from database.lc (git-ignored)
+function dbConnect
+  put getDBHost() into tHost
+  put getDBName() into tDatabase
+  put getDBUser() into tUser
+  put getDBPassword() into tPassword
+  
+  put revOpenDatabase("mysql", tHost, tDatabase, tUser, tPassword) into tConnectionID
+  
+  if tConnectionID is a number then
+    return tConnectionID
+  else
+    return "ERROR: Database connection failed -" && tConnectionID
+  end if
+end dbConnect
+
+
+-- ============================================================================
+-- JSON RESPONSE HELPERS
+-- ============================================================================
+
+-- Function to return JSON error using PhotonJSON's JSONStringify
+function jsonError pMessage
+  put pMessage into tResult["message"]
+  put "error" into tResult["status"]
+  return JSONStringify(tResult)
+end jsonError
+
+-- Function to return JSON success with data using PhotonJSON's JSONStringify
+function jsonSuccess pData
+  put pData into tResult["data"]
+  put "success" into tResult["status"]
+  return JSONStringify(tResult)
+end jsonSuccess
+
+
+-- ============================================================================
+-- SQL SECURITY FUNCTIONS
+-- ============================================================================
+
+-- Function to escape SQL string
+function sqlEscape pString
+  replace "\" with "\\" in pString
+  replace "'" with "\'" in pString
+  replace quote with "\" & quote in pString
+  replace return with "\n" in pString
+  replace tab with "\t" in pString
+  return pString
+end sqlEscape
+
+-- Validate and sanitize numeric ID
+-- Parameters:
+--   pID (Any) - ID value to validate
+-- Returns: Numeric ID or empty if invalid
+-- Note: Prevents SQL injection in numeric fields
+function validateNumericID pID
+  -- Remove any whitespace
+  put trim(pID) into pID
+  
+  -- Check if it's a positive integer
+  if pID is not a number then
+    return empty
+  end if
+  
+  if pID is not an integer then
+    return empty
+  end if
+  
+  if pID < 1 then
+    return empty
+  end if
+  
+  -- Return as number (prevents injection like "1.0")
+  return (pID + 0)
+end validateNumericID
+
+
+-- ============================================================================
+-- PASSWORD HASHING WITH SALT AND ITERATIONS
+-- ============================================================================
+
+-- Get password hashing iterations (configurable)
+-- Returns: Number - Iterations for password hashing (default: 1000)
+function getPasswordIterations
+  return 1000
+end getPasswordIterations
+
+-- Generate random salt for password hashing
+-- Returns: String - Random hex salt (32 characters)
+function generateSalt
+  local tSalt
+  repeat 16 times
+    put random(255) into tByte
+    put baseConvert(tByte, 10, 16) after tSalt
+  end repeat
+  return tSalt
+end generateSalt
+
+-- Hash password with salt and iterations
+-- Parameters:
+--   pPassword (String) - Plain text password
+--   pSalt (String) - Salt value (generated if empty)
+-- Returns: String - Format "salt:hash"
+function hashPassword pPassword, pSalt
+  -- Generate salt if not provided
+  if pSalt is empty then
+    put generateSalt() into pSalt
+  end if
+  
+  -- Start with salted password
+  put pSalt & pPassword into tHash
+  
+  -- Hash multiple times for PBKDF2-like strength
+  put getPasswordIterations() into tIterations
+  repeat tIterations times
+    put messageDigest(tHash, "SHA256") into tHash
+  end repeat
+  
+  -- Return salt:hash format
+  return pSalt & ":" & tHash
+end hashPassword
+
+-- Verify password against stored hash
+-- Parameters:
+--   pPassword (String) - Plain text password to verify
+--   pStoredHash (String) - Stored hash (format: "salt:hash" or plain hash for legacy)
+-- Returns: Boolean - True if password matches
+function verifyPassword pPassword, pStoredHash
+  -- Check for new format (salt:hash)
+  if ":" is in pStoredHash then
+    -- New salted format
+    set itemDelimiter to ":"
+    put item 1 of pStoredHash into tSalt
+    put item 2 of pStoredHash into tStoredHash
+    
+    -- Hash provided password with same salt
+    put hashPassword(pPassword, tSalt) into tNewHash
+    set itemDelimiter to ":"
+    put item 2 of tNewHash into tComputedHash
+    
+    return tComputedHash = tStoredHash
+  else
+    -- Legacy format (plain SHA256, no salt)
+    put messageDigest(pPassword, "SHA256") into tComputedHash
+    return tComputedHash = pStoredHash
+  end if
+end verifyPassword
+
+-- Check if password hash needs migration to salted format
+-- Parameters:
+--   pStoredHash (String) - Current stored hash
+-- Returns: Boolean - True if migration needed
+function needsPasswordMigration pStoredHash
+  return ":" is not in pStoredHash
+end needsPasswordMigration
+
+
+-- ============================================================================
+-- JWT AUTHENTICATION FUNCTIONS
+-- ============================================================================
+-- Note: getJWTSecret() is in secret.lc (git-ignored file)
+
+-- Get JWT token expiration time in seconds
+-- Returns: Number - Seconds until expiration (default: 1800 = 30 minutes)
+function getJWTExpiration
+  return 1800
+end getJWTExpiration
+
+-- Generate JWT token with user data (convenience wrapper)
+-- Parameters:
+--   pUserID (Number) - User ID
+--   pUsername (String) - Username
+--   pName (String) - User's full name
+--   pExpiry (Number) - Optional expiration in seconds (default: 1800 = 30 min)
+-- Returns: JWT token string
+function generateJWT pUserID, pUsername, pName, pExpiry
+  -- Build payload array
+  put pUserID into tPayload["user_id"]
+  put pUsername into tPayload["username"]
+  put pName into tPayload["name"]
+  
+  -- Add custom expiration if provided
+  if pExpiry is a number and pExpiry > 0 then
+    put the seconds + pExpiry into tPayload["exp"]
+    put the seconds into tPayload["iat"]
+    
+    -- Create token without automatic expiration (we set it manually)
+    put "HS256" into tHeader["alg"]
+    put "JWT" into tHeader["typ"]
+    
+    put base64URLEncode(JSONStringify(tHeader)) into tEncodedHeader
+    put base64URLEncode(JSONStringify(tPayload)) into tEncodedPayload
+    
+    put tEncodedHeader & "." & tEncodedPayload into tData
+    put createSignature(tData, getJWTSecret()) into tSignature
+    
+    if tSignature begins with "ERROR:" then
+      return tSignature
+    end if
+    
+    return tEncodedHeader & "." & tEncodedPayload & "." & tSignature
+  else
+    -- Use default expiration from createJWT
+    return createJWT(tPayload)
+  end if
+end generateJWT
+
+-- Create signed JWT token
+-- Parameters:
+--   pPayload (Array) - User data to encode (user_id, username, etc.)
+-- Returns: JWT token string (header.payload.signature)
+function createJWT pPayload
+  -- Add timestamps
+  put the seconds into tPayload["iat"]
+  put the seconds + getJWTExpiration() into tPayload["exp"]
+  
+  -- Merge with provided payload
+  repeat for each key tKey in pPayload
+    put pPayload[tKey] into tPayload[tKey]
+  end repeat
+  
+  -- Create header
+  put "HS256" into tHeader["alg"]
+  put "JWT" into tHeader["typ"]
+  
+  -- Encode header and payload
+  put base64URLEncode(JSONStringify(tHeader)) into tEncodedHeader
+  put base64URLEncode(JSONStringify(tPayload)) into tEncodedPayload
+  
+  -- Create signature
+  put tEncodedHeader & "." & tEncodedPayload into tData
+  put createSignature(tData, getJWTSecret()) into tSignature
+  
+  if tSignature begins with "ERROR:" then
+    return tSignature
+  end if
+  
+  -- Return complete token
+  return tEncodedHeader & "." & tEncodedPayload & "." & tSignature
+end createJWT
+
+-- Verify JWT token
+-- Parameters:
+--   pToken (String) - JWT token to verify
+-- Returns: Array with decoded payload or empty if invalid
+function verifyJWT pToken
+  -- Split token into parts
+  split pToken by "."
+  
+  if the number of elements in pToken is not 3 then
+    return empty
+  end if
+  
+  put pToken[1] into tEncodedHeader
+  put pToken[2] into tEncodedPayload
+  put pToken[3] into tProvidedSignature
+  
+  -- Verify signature
+  put tEncodedHeader & "." & tEncodedPayload into tData
+  put createSignature(tData, getJWTSecret()) into tExpectedSignature
+  
+  if tProvidedSignature is not tExpectedSignature then
+    return empty
+  end if
+  
+  -- Decode payload
+  put base64URLDecode(tEncodedPayload) into tPayloadJSON
+  put JSONParser(tPayloadJSON) into tPayload
+  
+  -- Check expiration
+  if tPayload["exp"] is not empty then
+    if tPayload["exp"] < the seconds then
+      return empty
+    end if
+  end if
+  
+  return tPayload
+end verifyJWT
+
+-- Create HMAC-SHA256 signature for JWT
+-- Parameters:
+--   pData (String) - Data to sign
+--   pSecret (String) - Secret key
+-- Returns: Base64URL encoded signature
+function createSignature pData, pSecret
+  -- Calculate HMAC-SHA256
+  put messageDigest(pData, "SHA256", pSecret) into tHash
+  
+  if tHash begins with "error" then
+    return "ERROR: Failed to create signature"
+  end if
+  
+  -- Convert hex to binary
+  repeat with i = 1 to the length of tHash step 2
+    put numToChar(baseConvert(char i to i+1 of tHash, 16, 10)) after tBinary
+  end repeat
+  
+  -- Base64URL encode
+  return base64URLEncode(tBinary)
+end createSignature
+
+-- Base64URL encode (URL-safe base64 without padding)
+-- Parameters:
+--   pData (String) - Data to encode
+-- Returns: Base64URL encoded string
+function base64URLEncode pData
+  put base64Encode(pData) into tEncoded
+  replace "+" with "-" in tEncoded
+  replace "/" with "_" in tEncoded
+  replace "=" with "" in tEncoded
+  return tEncoded
+end base64URLEncode
+
+-- Base64URL decode
+-- Parameters:
+--   pData (String) - Base64URL encoded data
+-- Returns: Decoded string
+function base64URLDecode pData
+  -- Convert back to standard base64
+  replace "-" with "+" in pData
+  replace "_" with "/" in pData
+  
+  -- Add padding if needed
+  put the length of pData mod 4 into tMod
+  if tMod is not 0 then
+    repeat 4 - tMod times
+      put "=" after pData
+    end repeat
+  end if
+  
+  return base64Decode(pData)
+end base64URLDecode
+?>

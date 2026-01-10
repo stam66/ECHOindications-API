@@ -1,0 +1,155 @@
+<?lc
+-- Search API - Using LiveCode Arrays
+
+include "lib/db-functions.lc"
+
+on startup
+  put header "Content-Type: application/json"
+  
+  put $_GET["action"] into tAction
+  put $_GET["keyword"] into tKeyword
+  put $_GET["context_id"] into tContextID
+  put $_GET["urgency"] into tUrgency
+  put $_GET["primary_care"] into tPrimaryCare
+  put $_GET["source"] into tSource
+  
+  put dbConnect() into tConnectionID
+  if tConnectionID begins with "ERROR:" then
+    put jsonError(tConnectionID)
+    exit startup
+  end if
+  
+  switch tAction
+    case "keyword"
+      put handleKeywordSearch(tConnectionID, tKeyword) into tResponse
+      break
+    case "advanced"
+      put handleAdvancedSearch(tConnectionID, tKeyword, tContextID, tUrgency, tPrimaryCare, tSource) into tResponse
+      break
+    default
+      put jsonError("Invalid action. Use: keyword, advanced") into tResponse
+  end switch
+  
+  revCloseDatabase tConnectionID
+  put tResponse
+end startup
+
+startup
+
+function handleKeywordSearch pConnectionID, pKeyword
+  if pKeyword is empty then
+    return jsonError("Keyword required")
+  end if
+  
+  put sqlEscape(pKeyword) into tSafeKeyword
+  
+  put "SELECT DISTINCT i.id, i.title, i.keywords, i.primary_care, i.urgency," into tSQL
+  put " GROUP_CONCAT(c.name ORDER BY c.sort_order SEPARATOR ', ') as contexts" after tSQL
+  put " FROM indications i" after tSQL
+  put " LEFT JOIN indication_contexts ic ON i.id = ic.indication_id" after tSQL
+  put " LEFT JOIN contexts c ON ic.context_id = c.id" after tSQL
+  put " WHERE (i.title LIKE '%" & tSafeKeyword & "%'" after tSQL
+  put " OR i.keywords LIKE '%" & tSafeKeyword & "%'" after tSQL
+  put " OR c.name LIKE '%" & tSafeKeyword & "%')" after tSQL
+  put " GROUP BY i.id" after tSQL
+  put " ORDER BY i.title" after tSQL
+  put " LIMIT 100" after tSQL
+  
+  put revDataFromQuery(tab, return, pConnectionID, tSQL) into tData
+  
+  if tData begins with "revdberr" then
+    return jsonError(tData)
+  end if
+  
+  put 1 into tIndex
+  repeat for each line tLine in tData
+    split tLine by tab
+    
+    put tLine[1] into tResults[tIndex]["id"]
+    put tLine[2] into tResults[tIndex]["title"]
+    put tLine[3] into tResults[tIndex]["keywords"]
+    put tLine[4] into tResults[tIndex]["primary_care"]
+    put tLine[5] into tResults[tIndex]["urgency"]
+    put tLine[6] into tResults[tIndex]["contexts"]
+    
+    add 1 to tIndex
+  end repeat
+  
+  return jsonSuccess(tResults)
+end handleKeywordSearch
+
+function handleAdvancedSearch pConnectionID, pKeyword, pContextID, pUrgency, pPrimaryCare, pSource
+  put "SELECT DISTINCT i.id, i.title, i.keywords, i.primary_care, i.urgency," into tSQL
+  put " GROUP_CONCAT(c.name ORDER BY c.sort_order SEPARATOR ', ') as contexts" after tSQL
+  put " FROM indications i" after tSQL
+  put " LEFT JOIN indication_contexts ic ON i.id = ic.indication_id" after tSQL
+  put " LEFT JOIN contexts c ON ic.context_id = c.id" after tSQL
+  put " WHERE 1=1" after tSQL
+  
+  -- Add filters
+  if pKeyword is not empty then
+    put sqlEscape(pKeyword) into tSafeKeyword
+    put " AND (i.title LIKE '%" & tSafeKeyword & "%' OR i.keywords LIKE '%" & tSafeKeyword & "%')" after tSQL
+  end if
+  
+  if pContextID is not empty then
+    -- Validate context ID to prevent SQL injection
+    put validateNumericID(pContextID) into tSafeContextID
+    if tSafeContextID is empty then
+      return jsonError("Invalid context ID")
+    end if
+    put " AND i.id IN (SELECT indication_id FROM indication_contexts WHERE context_id =" && tSafeContextID & ")" after tSQL
+  end if
+  
+  if pUrgency is not empty then
+    put " AND i.urgency = '" & sqlEscape(pUrgency) & "'" after tSQL
+  end if
+  
+  if pPrimaryCare is not empty then
+    put " AND i.primary_care = '" & sqlEscape(pPrimaryCare) & "'" after tSQL
+  end if
+  
+  if pSource is not empty then
+    switch pSource
+      case "ase"
+        put " AND i.source_ase = 1" after tSQL
+        break
+      case "eacvi"
+        put " AND i.source_eacvi = 1" after tSQL
+        break
+      case "bse"
+        put " AND i.source_bse = 1" after tSQL
+        break
+      case "consensus"
+        put " AND i.source_consensus = 1" after tSQL
+        break
+    end switch
+  end if
+  
+  put " GROUP BY i.id" after tSQL
+  put " ORDER BY i.title" after tSQL
+  put " LIMIT 100" after tSQL
+  
+  put revDataFromQuery(tab, return, pConnectionID, tSQL) into tData
+  
+  if tData begins with "revdberr" then
+    return jsonError(tData)
+  end if
+  
+  put 1 into tIndex
+  repeat for each line tLine in tData
+    split tLine by tab
+    
+    put tLine[1] into tResults[tIndex]["id"]
+    put tLine[2] into tResults[tIndex]["title"]
+    put tLine[3] into tResults[tIndex]["keywords"]
+    put tLine[4] into tResults[tIndex]["primary_care"]
+    put tLine[5] into tResults[tIndex]["urgency"]
+    put tLine[6] into tResults[tIndex]["contexts"]
+    
+    add 1 to tIndex
+  end repeat
+  
+  return jsonSuccess(tResults)
+end handleAdvancedSearch
+?>

@@ -1,0 +1,132 @@
+<?lc
+-- ============================================================================
+-- AUTHENTICATION ENDPOINT - ECHOINDICATIONS API
+-- ============================================================================
+-- Handles user login with JWT token generation
+-- Features: Salted passwords with iterations, auto-migration from legacy hashes
+--
+-- Endpoint: /auth.lc?action=login
+-- Method: POST
+-- Body: {"username":"admin","password":"password123"}
+--
+-- Response: {"status":"success","data":{"token":"...","user":{...}}}
+-- ============================================================================
+
+include "lib/db-functions.lc"
+
+on startup
+  put header "Content-Type: application/json"
+  
+  put $_GET["action"] into tAction
+  
+  switch tAction
+    case "login"
+      put handleLogin() into tResponse
+      break
+    default
+      put jsonError("Invalid action. Use: login") into tResponse
+  end switch
+  
+  put tResponse
+end startup
+
+startup
+
+
+-- ============================================================================
+-- LOGIN HANDLER WITH SALTED PASSWORDS
+-- ============================================================================
+
+-- Handle login request and issue JWT token
+-- Supports auto-migration from legacy unsalted passwords
+-- Returns: JSON response with token and user info
+function handleLogin
+  -- Get credentials from POST body
+  put $_POST_RAW into tPostData
+  
+  if tPostData is empty then
+    return jsonError("No credentials provided")
+  end if
+  
+  -- Parse JSON credentials
+  put JSONParser(tPostData) into tCredentials
+  
+  if tCredentials is not an array then
+    return jsonError("Invalid JSON format")
+  end if
+  
+  put tCredentials["username"] into tUsername
+  put tCredentials["password"] into tPassword
+  
+  if tUsername is empty or tPassword is empty then
+    return jsonError("Username and password required")
+  end if
+  
+  -- Connect to database
+  put dbConnect() into tConnectionID
+  if tConnectionID begins with "ERROR:" then
+    return jsonError(tConnectionID)
+  end if
+  
+  -- Get user from database (including password_hash and salt)
+  put "SELECT id, username, password_hash, name, email, is_active FROM users" into tSQL
+  put " WHERE username = '" & sqlEscape(tUsername) & "'" after tSQL
+  put " AND is_active = 1 LIMIT 1" after tSQL
+  
+  put revDataFromQuery(tab, return, tConnectionID, tSQL) into tData
+  
+  if tData begins with "revdberr" or tData is empty then
+    revCloseDatabase tConnectionID
+    return jsonError("Invalid username or password")
+  end if
+  
+  -- Parse user data
+  split tData by tab
+  put tData[1] into tUserID
+  put tData[2] into tUserUsername
+  put tData[3] into tStoredHash
+  put tData[4] into tName
+  put tData[5] into tEmail
+  put tData[6] into tIsActive
+  
+  -- Verify password using new salted verification (handles legacy too)
+  if verifyPassword(tPassword, tStoredHash) is false then
+    revCloseDatabase tConnectionID
+    return jsonError("Invalid username or password")
+  end if
+  
+  -- AUTO-MIGRATION: If password is in legacy format, upgrade it
+  if needsPasswordMigration(tStoredHash) then
+    -- Generate new salted hash
+    put hashPassword(tPassword) into tNewHash
+    
+    -- Update database with new hash
+    put "UPDATE users SET password_hash = '" & sqlEscape(tNewHash) & "'" into tUpdateSQL
+    put " WHERE id = " & tUserID after tUpdateSQL
+    
+    revExecuteSQL tConnectionID, tUpdateSQL
+    
+    -- Note: We don't fail login if migration fails, just log it
+    -- In production, you might want to log this migration
+  end if
+  
+  -- Generate JWT token
+  put generateJWT(tUserID, tUserUsername, tName) into tToken
+  
+  if tToken begins with "ERROR:" then
+    revCloseDatabase tConnectionID
+    return jsonError("Failed to generate token")
+  end if
+  
+  -- Build response
+  put tToken into tResult["token"]
+  put tUserID into tResult["user"]["id"]
+  put tUserUsername into tResult["user"]["username"]
+  put tName into tResult["user"]["name"]
+  put tEmail into tResult["user"]["email"]
+  
+  revCloseDatabase tConnectionID
+  
+  return jsonSuccess(tResult)
+end handleLogin
+?>

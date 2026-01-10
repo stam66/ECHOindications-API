@@ -1,0 +1,131 @@
+<?lc
+-- Contexts CRUD API
+
+include "lib/db-functions.lc"
+
+on startup
+  put header "Content-Type: application/json"
+  
+  put $_GET["action"] into tAction
+  put $_GET["id"] into tID
+  put $_GET["include_inactive"] into tIncludeInactive
+  
+  put dbConnect() into tConnectionID
+  if tConnectionID begins with "ERROR:" then
+    put jsonError(tConnectionID)
+    exit startup
+  end if
+  
+  switch tAction
+    case "list"
+      put handleListContexts(tConnectionID, tIncludeInactive) into tResponse
+      break
+    case "read"
+      put handleReadContext(tConnectionID, tID) into tResponse
+      break
+    case "with_counts"
+      put handleContextsWithCounts(tConnectionID) into tResponse
+      break
+    default
+      put jsonError("Invalid action. Use: list, read, with_counts") into tResponse
+  end switch
+  
+  revCloseDatabase tConnectionID
+  put tResponse
+end startup
+
+startup
+
+function handleListContexts pConnectionID, pIncludeInactive
+  put "SELECT id, name, description, sort_order, is_active FROM contexts" into tSQL
+  
+  if pIncludeInactive is not 1 then
+    put " WHERE is_active = 1" after tSQL
+  end if
+  
+  put " ORDER BY sort_order, name" after tSQL
+  
+  put revDataFromQuery(tab, return, pConnectionID, tSQL) into tData
+  
+  if tData begins with "revdberr" then
+    return jsonError(tData)
+  end if
+  
+  put 1 into tIndex
+  repeat for each line tLine in tData
+    split tLine by tab
+    
+    put tLine[1] into tContexts[tIndex]["id"]
+    put tLine[2] into tContexts[tIndex]["name"]
+    put tLine[3] into tContexts[tIndex]["description"]
+    put tLine[4] into tContexts[tIndex]["sort_order"]
+    put tLine[5] into tContexts[tIndex]["is_active"]
+    
+    add 1 to tIndex
+  end repeat
+  
+  return jsonSuccess(tContexts)
+end handleListContexts
+
+function handleReadContext pConnectionID, pID
+  if pID is empty then
+    return jsonError("Context ID required")
+  end if
+  
+  -- Validate ID to prevent SQL injection
+  put validateNumericID(pID) into tSafeID
+  if tSafeID is empty then
+    return jsonError("Invalid context ID")
+  end if
+  
+  put "SELECT id, name, description, sort_order, is_active FROM contexts WHERE id =" && tSafeID into tSQL
+  
+  put revDataFromQuery(tab, return, pConnectionID, tSQL) into tData
+  
+  if tData begins with "revdberr" or tData is empty then
+    return jsonError("Context not found")
+  end if
+  
+  split tData by tab
+  
+  put tData[1] into tContext["id"]
+  put tData[2] into tContext["name"]
+  put tData[3] into tContext["description"]
+  put tData[4] into tContext["sort_order"]
+  put tData[5] into tContext["is_active"]
+  
+  return jsonSuccess(tContext)
+end handleReadContext
+
+function handleContextsWithCounts pConnectionID
+  put "SELECT c.id, c.name, c.description, c.sort_order, c.is_active," into tSQL
+  put " COUNT(ic.indication_id) as indication_count" after tSQL
+  put " FROM contexts c" after tSQL
+  put " LEFT JOIN indication_contexts ic ON c.id = ic.context_id" after tSQL
+  put " WHERE c.is_active = 1" after tSQL
+  put " GROUP BY c.id" after tSQL
+  put " ORDER BY c.sort_order, c.name" after tSQL
+  
+  put revDataFromQuery(tab, return, pConnectionID, tSQL) into tData
+  
+  if tData begins with "revdberr" then
+    return jsonError(tData)
+  end if
+  
+  put 1 into tIndex
+  repeat for each line tLine in tData
+    split tLine by tab
+    
+    put tLine[1] into tContexts[tIndex]["id"]
+    put tLine[2] into tContexts[tIndex]["name"]
+    put tLine[3] into tContexts[tIndex]["description"]
+    put tLine[4] into tContexts[tIndex]["sort_order"]
+    put tLine[5] into tContexts[tIndex]["is_active"]
+    put tLine[6] into tContexts[tIndex]["indication_count"]
+    
+    add 1 to tIndex
+  end repeat
+  
+  return jsonSuccess(tContexts)
+end handleContextsWithCounts
+?>

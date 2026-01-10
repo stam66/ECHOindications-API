@@ -1,0 +1,273 @@
+<?lc
+-- Indications CRUD API - Using LiveCode Arrays
+
+include "lib/db-functions.lc"
+
+on startup
+  put header "Content-Type: application/json"
+  
+  put $_GET["action"] into tAction
+  put $_GET["id"] into tID
+  put $_GET["context_id"] into tContextID
+  put $_GET["username"] into tUsername
+  put $_POST_RAW into tPostData
+  
+  put dbConnect() into tConnectionID
+  if tConnectionID begins with "ERROR:" then
+    put jsonError(tConnectionID)
+    exit startup
+  end if
+  
+  switch tAction
+    case "list"
+      put handleListIndications(tConnectionID) into tResponse
+      break
+    case "list_by_context"
+      put handleListByContext(tConnectionID, tContextID) into tResponse
+      break
+    case "read"
+      put handleReadIndication(tConnectionID, tID) into tResponse
+      break
+    case "create"
+      put handleCreateIndication(tConnectionID, tPostData, tUsername) into tResponse
+      break
+    case "update"
+      put handleUpdateIndication(tConnectionID, tPostData, tUsername) into tResponse
+      break
+    case "delete"
+      put handleDeleteIndication(tConnectionID, tID, tUsername) into tResponse
+      break
+    default
+      put jsonError("Invalid action. Use: list, list_by_context, read, create, update, delete") into tResponse
+  end switch
+  
+  revCloseDatabase tConnectionID
+  put tResponse
+end startup
+
+startup
+
+function handleListIndications pConnectionID
+  put "SELECT i.id, i.title, i.keywords, i.comments, i.primary_care, i.secondary_inpatient," into tSQL
+  put " i.secondary_outpatient, i.source_ase, i.source_eacvi, i.source_bse, i.source_consensus," after tSQL
+  put " i.urgency, i.created_at, i.updated_at," after tSQL
+  put " GROUP_CONCAT(c.id ORDER BY c.sort_order SEPARATOR ',') as context_ids," after tSQL
+  put " GROUP_CONCAT(c.name ORDER BY c.sort_order SEPARATOR '||') as context_names" after tSQL
+  put " FROM indications i" after tSQL
+  put " LEFT JOIN indication_contexts ic ON i.id = ic.indication_id" after tSQL
+  put " LEFT JOIN contexts c ON ic.context_id = c.id AND c.is_active = 1" after tSQL
+  put " GROUP BY i.id" after tSQL
+  put " ORDER BY i.title" after tSQL
+  
+  put revDataFromQuery(tab, return, pConnectionID, tSQL) into tData
+  
+  if tData begins with "revdberr" then
+    return jsonError(tData)
+  end if
+  
+  -- Build array of indications
+  put 1 into tIndex
+  repeat for each line tLine in tData
+    split tLine by tab
+    
+    -- Basic fields
+    put tLine[1] into tIndications[tIndex]["id"]
+    put tLine[2] into tIndications[tIndex]["title"]
+    put tLine[3] into tIndications[tIndex]["keywords"]
+    put tLine[4] into tIndications[tIndex]["comments"]
+    put tLine[5] into tIndications[tIndex]["primary_care"]
+    put tLine[6] into tIndications[tIndex]["secondary_inpatient"]
+    put tLine[7] into tIndications[tIndex]["secondary_outpatient"]
+    
+    -- Source fields (convert empty to null)
+    put tLine[8] into tIndications[tIndex]["source_ase"]
+    put tLine[9] into tIndications[tIndex]["source_eacvi"]
+    put tLine[10] into tIndications[tIndex]["source_bse"]
+    put tLine[11] into tIndications[tIndex]["source_consensus"]
+    
+    put tLine[12] into tIndications[tIndex]["urgency"]
+    put tLine[13] into tIndications[tIndex]["created_at"]
+    put tLine[14] into tIndications[tIndex]["updated_at"]
+    
+    -- Parse contexts into array
+    put tLine[15] into tContextIDs
+    put tLine[16] into tContextNames
+    
+    if tContextIDs is not empty then
+      split tContextIDs by ","
+      split tContextNames by "||"
+      
+      put 1 into tCtxIndex
+      repeat for each element tCtxID in tContextIDs
+        put tCtxID into tIndications[tIndex]["contexts"][tCtxIndex]["id"]
+        put tContextNames[tCtxIndex] into tIndications[tIndex]["contexts"][tCtxIndex]["name"]
+        add 1 to tCtxIndex
+      end repeat
+    else
+      -- Empty array for contexts
+      put empty into tIndications[tIndex]["contexts"]
+    end if
+    
+    add 1 to tIndex
+  end repeat
+  
+  -- Convert to JSON and return
+  return jsonSuccess(tIndications)
+end handleListIndications
+
+function handleListByContext pConnectionID, pContextID
+  if pContextID is empty then
+    return jsonError("Context ID required")
+  end if
+  
+  -- Validate ID to prevent SQL injection
+  put validateNumericID(pContextID) into tSafeID
+  if tSafeID is empty then
+    return jsonError("Invalid context ID")
+  end if
+  
+  put "SELECT i.id, i.title, i.keywords, i.primary_care, i.urgency," into tSQL
+  put " GROUP_CONCAT(c.name ORDER BY c.sort_order SEPARATOR ', ') as context_names" after tSQL
+  put " FROM indications i" after tSQL
+  put " INNER JOIN indication_contexts ic ON i.id = ic.indication_id" after tSQL
+  put " LEFT JOIN contexts c ON ic.context_id = c.id" after tSQL
+  put " WHERE i.id IN (SELECT indication_id FROM indication_contexts WHERE context_id =" && tSafeID & ")" after tSQL
+  put " GROUP BY i.id" after tSQL
+  put " ORDER BY i.title" after tSQL
+  
+  put revDataFromQuery(tab, return, pConnectionID, tSQL) into tData
+  
+  if tData begins with "revdberr" then
+    return jsonError(tData)
+  end if
+  
+  put 1 into tIndex
+  repeat for each line tLine in tData
+    split tLine by tab
+    
+    put tLine[1] into tIndications[tIndex]["id"]
+    put tLine[2] into tIndications[tIndex]["title"]
+    put tLine[3] into tIndications[tIndex]["keywords"]
+    put tLine[4] into tIndications[tIndex]["primary_care"]
+    put tLine[5] into tIndications[tIndex]["urgency"]
+    put tLine[6] into tIndications[tIndex]["contexts"]
+    
+    add 1 to tIndex
+  end repeat
+  
+  return jsonSuccess(tIndications)
+end handleListByContext
+
+function handleReadIndication pConnectionID, pID
+  if pID is empty then
+    return jsonError("Indication ID required")
+  end if
+  
+  -- Validate ID to prevent SQL injection
+  put validateNumericID(pID) into tSafeID
+  if tSafeID is empty then
+    return jsonError("Invalid indication ID")
+  end if
+  
+  put "SELECT i.*, GROUP_CONCAT(c.id ORDER BY c.sort_order SEPARATOR ',') as context_ids," into tSQL
+  put " GROUP_CONCAT(c.name ORDER BY c.sort_order SEPARATOR '||') as context_names" after tSQL
+  put " FROM indications i" after tSQL
+  put " LEFT JOIN indication_contexts ic ON i.id = ic.indication_id" after tSQL
+  put " LEFT JOIN contexts c ON ic.context_id = c.id" after tSQL
+  put " WHERE i.id =" && tSafeID after tSQL
+  put " GROUP BY i.id" after tSQL
+  
+  put revDataFromQuery(tab, return, pConnectionID, tSQL) into tData
+  
+  if tData begins with "revdberr" or tData is empty then
+    return jsonError("Indication not found")
+  end if
+  
+  split tData by tab
+  
+  -- Build indication object
+  put tData[1] into tIndication["id"]
+  put tData[2] into tIndication["title"]
+  put tData[3] into tIndication["keywords"]
+  put tData[4] into tIndication["comments"]
+  put tData[5] into tIndication["primary_care"]
+  put tData[6] into tIndication["secondary_inpatient"]
+  put tData[7] into tIndication["secondary_outpatient"]
+  put tData[8] into tIndication["source_ase"]
+  put tData[9] into tIndication["source_eacvi"]
+  put tData[10] into tIndication["source_bse"]
+  put tData[11] into tIndication["source_consensus"]
+  put tData[12] into tIndication["created_at"]
+  put tData[13] into tIndication["updated_at"]
+  put tData[14] into tIndication["urgency"]
+  
+  -- Parse contexts
+  put tData[15] into tContextIDs
+  put tData[16] into tContextNames
+  
+  if tContextIDs is not empty then
+    split tContextIDs by ","
+    split tContextNames by "||"
+    
+    put 1 into tCtxIndex
+    repeat for each element tCtxID in tContextIDs
+      put tCtxID into tIndication["contexts"][tCtxIndex]["id"]
+      put tContextNames[tCtxIndex] into tIndication["contexts"][tCtxIndex]["name"]
+      add 1 to tCtxIndex
+    end repeat
+  else
+    put empty into tIndication["contexts"]
+  end if
+  
+  return jsonSuccess(tIndication)
+end handleReadIndication
+
+function handleCreateIndication pConnectionID, pPostData, pUsername
+  return jsonError("Create indication not yet implemented - requires JSON parsing")
+end handleCreateIndication
+
+function handleUpdateIndication pConnectionID, pPostData, pUsername
+  return jsonError("Update indication not yet implemented")
+end handleUpdateIndication
+
+function handleDeleteIndication pConnectionID, pID, pUsername
+  if pID is empty then
+    return jsonError("Indication ID required")
+  end if
+  
+  -- Validate ID to prevent SQL injection
+  put validateNumericID(pID) into tSafeID
+  if tSafeID is empty then
+    return jsonError("Invalid indication ID")
+  end if
+  
+  if pUsername is empty then
+    put "system" into pUsername
+  end if
+  
+  -- Get old data for audit
+  put handleReadIndication(pConnectionID, tSafeID) into tOldDataJSON
+  
+  -- Delete contexts first
+  put "DELETE FROM indication_contexts WHERE indication_id =" && tSafeID into tSQL
+  revExecuteSQL pConnectionID, tSQL
+  
+  -- Delete indication
+  put "DELETE FROM indications WHERE id =" && tSafeID into tSQL2
+  revExecuteSQL pConnectionID, tSQL2
+  
+  if the result is not empty then
+    return jsonError(the result)
+  end if
+  
+  -- Log to audit
+  put sqlEscape(pUsername) into tSafeUser
+  put sqlEscape(tOldDataJSON) into tSafeJSON
+  put "INSERT INTO audit (audit_user, audit_table, audit_primarykey, action, old_values)" into tAuditSQL
+  put " VALUES ('" & tSafeUser & "', 'indications'," && tSafeID & ", 'delete', '" & tSafeJSON & "')" after tAuditSQL
+  revExecuteSQL pConnectionID, tAuditSQL
+  
+  put "Indication deleted successfully" into tResult
+  return jsonSuccess(tResult)
+end handleDeleteIndication
+?>
