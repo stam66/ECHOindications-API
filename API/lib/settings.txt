@@ -5,7 +5,8 @@
 -- WARNING: This file contains your database credentials
 -- DO NOT commit this file to Git
 -- Add to .gitignore: lib/settings.lc
--- MCHANGE THE DATA BELOW TO YOUR DATA AND CHANGE THE EXTENSION .txt TO .lc
+--
+-- CHANGE THE DATA BELOW TO YOUR DATA AND CHANGE EXTENSION FROM .txt TO .lc
 -- ============================================================================
 
 -- Return database host
