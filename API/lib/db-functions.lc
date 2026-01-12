@@ -49,7 +49,7 @@ end jsonError
 
 -- Return JSON success response
 -- Parameters: pData (Any) - Data to return
--- Returns: JSON string with success status
+-- Returns: JSON string with success status	
 function jsonSuccess pData
   put pData into tResult["data"]
   put "success" into tResult["status"]
@@ -105,7 +105,7 @@ function validateNumericID pID
   
   
   -- Reject negative numbers
-  if tIntID < 0 then
+  if pID < 0 then
     return empty
   end if
   
