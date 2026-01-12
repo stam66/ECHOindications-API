@@ -204,6 +204,9 @@ htmlcov/
 !lib/secret.lc.example
 !lib/database.lc.example
 
+# Database schema files are safe (no data, just structure)
+!API/database/*.sql
+
 # README and documentation
 !README.md
 !*.md
