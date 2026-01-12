@@ -4,11 +4,13 @@
 include "lib/db-functions.lc"
 
 on startup
+  -- Set security headers first
+  setSecurityHeaders
   put header "Content-Type: application/json"
-  
+
   put $_GET["action"] into tAction
   put $_POST_RAW into tPostData
-  
+
   switch tAction
     case "login"
       put handleLogin(tPostData) into tResponse
@@ -19,7 +21,7 @@ on startup
     default
       put jsonError("Invalid action. Use: login, refresh") into tResponse
   end switch
-  
+
   put tResponse
 end startup
 
@@ -29,25 +31,35 @@ function handleLogin pPostData
   if pPostData is empty then
     return jsonError("No data provided")
   end if
-  
+
   -- Parse JSON
   put JSONParser(pPostData) into tData
-  
+
   if tData is not an array then
     return jsonError("Invalid JSON format")
   end if
-  
+
   put tData["username"] into tUsername
   put tData["password"] into tPassword
-  
+
   if tUsername is empty or tPassword is empty then
     return jsonError("Username and password required")
   end if
-  
+
   -- Connect to database
   put dbConnect() into tConnectionID
   if tConnectionID begins with "ERROR:" then
     return jsonError(tConnectionID)
+  end if
+
+  -- Check rate limiting: 5 attempts per 15 minutes (900 seconds)
+  put getClientIP() into tClientIP
+  put checkRateLimit(tConnectionID, tClientIP, "login", 5, 900) into tRateLimitError
+
+  if tRateLimitError is not empty then
+    revCloseDatabase tConnectionID
+    put header "Status: 429 Too Many Requests"
+    return jsonError(tRateLimitError)
   end if
   
   -- Get user from database
@@ -111,21 +123,24 @@ function handleLogin pPostData
   
   -- Generate JWT token
   put generateJWT(tUserData[1], tUserData[2], tUserData[5]) into tToken
-  
+
   if tToken begins with "ERROR:" then
     revCloseDatabase tConnectionID
     return jsonError("Failed to generate token")
   end if
-  
+
+  -- Reset rate limit after successful login
+  resetRateLimit tConnectionID, tClientIP, "login"
+
   -- Return success with token and user info
   put tToken into tResult["token"]
   put tUserData[1] into tResult["user"]["id"]
   put tUserData[2] into tResult["user"]["username"]
   put tUserData[5] into tResult["user"]["name"]
   put tUserData[4] into tResult["user"]["email"]
-  
+
   revCloseDatabase tConnectionID
-  
+
   return jsonSuccess(tResult)
 end handleLogin
 
