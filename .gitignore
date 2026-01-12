@@ -6,6 +6,7 @@
 # CRITICAL: SECRET FILES - NEVER COMMIT THESE!
 # ============================================================================
 lib/settings.lc
+settings.lc
 .env
 .env.local
 .env.*.local
