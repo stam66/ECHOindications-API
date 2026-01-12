@@ -1,10 +1,14 @@
 <?lc
 -- Users CRUD API - Using LiveCode Arrays
+-- PROTECTED: All actions require authentication
 
 include "lib/db-functions.lc"
 
 on startup
   put header "Content-Type: application/json"
+  
+  -- All user actions require authentication
+  put requireAuth() into tAuthPayload
   
   put $_GET["action"] into tAction
   put $_GET["id"] into tID

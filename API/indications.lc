@@ -1,5 +1,7 @@
 <?lc
 -- Indications CRUD API - Using LiveCode Arrays
+-- Public: list, read, list_by_context
+-- Protected: create, update, delete
 
 include "lib/db-functions.lc"
 
@@ -20,21 +22,30 @@ on startup
   
   switch tAction
     case "list"
+      -- PUBLIC: No auth required
       put handleListIndications(tConnectionID) into tResponse
       break
     case "list_by_context"
+      -- PUBLIC: No auth required
       put handleListByContext(tConnectionID, tContextID) into tResponse
       break
     case "read"
+      -- PUBLIC: No auth required
       put handleReadIndication(tConnectionID, tID) into tResponse
       break
     case "create"
+      -- PROTECTED: Auth required
+      put requireAuth() into tAuthUser
       put handleCreateIndication(tConnectionID, tPostData, tUsername) into tResponse
       break
     case "update"
+      -- PROTECTED: Auth required
+      put requireAuth() into tAuthUser
       put handleUpdateIndication(tConnectionID, tPostData, tUsername) into tResponse
       break
     case "delete"
+      -- PROTECTED: Auth required
+      put requireAuth() into tAuthUser
       put handleDeleteIndication(tConnectionID, tID, tUsername) into tResponse
       break
     default
@@ -79,7 +90,7 @@ function handleListIndications pConnectionID
     put tLine[6] into tIndications[tIndex]["secondary_inpatient"]
     put tLine[7] into tIndications[tIndex]["secondary_outpatient"]
     
-    -- Source fields (convert empty to null)
+    -- Source fields
     put tLine[8] into tIndications[tIndex]["source_ase"]
     put tLine[9] into tIndications[tIndex]["source_eacvi"]
     put tLine[10] into tIndications[tIndex]["source_bse"]
@@ -104,14 +115,12 @@ function handleListIndications pConnectionID
         add 1 to tCtxIndex
       end repeat
     else
-      -- Empty array for contexts
       put empty into tIndications[tIndex]["contexts"]
     end if
     
     add 1 to tIndex
   end repeat
   
-  -- Convert to JSON and return
   return jsonSuccess(tIndications)
 end handleListIndications
 
@@ -120,11 +129,11 @@ function handleListByContext pConnectionID, pContextID
     return jsonError("Context ID required")
   end if
   
-  -- Validate ID to prevent SQL injection
-  put validateNumericID(pContextID) into tSafeID
-  if tSafeID is empty then
+  if validateNumericID(pContextID) is empty then
     return jsonError("Invalid context ID")
   end if
+  
+  put pContextID into tSafeID
   
   put "SELECT i.id, i.title, i.keywords, i.primary_care, i.urgency," into tSQL
   put " GROUP_CONCAT(c.name ORDER BY c.sort_order SEPARATOR ', ') as context_names" after tSQL
@@ -163,11 +172,11 @@ function handleReadIndication pConnectionID, pID
     return jsonError("Indication ID required")
   end if
   
-  -- Validate ID to prevent SQL injection
-  put validateNumericID(pID) into tSafeID
-  if tSafeID is empty then
+  if validateNumericID(pID) is empty then
     return jsonError("Invalid indication ID")
   end if
+  
+  put pID into tSafeID
   
   put "SELECT i.*, GROUP_CONCAT(c.id ORDER BY c.sort_order SEPARATOR ',') as context_ids," into tSQL
   put " GROUP_CONCAT(c.name ORDER BY c.sort_order SEPARATOR '||') as context_names" after tSQL
@@ -185,7 +194,6 @@ function handleReadIndication pConnectionID, pID
   
   split tData by tab
   
-  -- Build indication object
   put tData[1] into tIndication["id"]
   put tData[2] into tIndication["title"]
   put tData[3] into tIndication["keywords"]
@@ -201,7 +209,6 @@ function handleReadIndication pConnectionID, pID
   put tData[13] into tIndication["updated_at"]
   put tData[14] into tIndication["urgency"]
   
-  -- Parse contexts
   put tData[15] into tContextIDs
   put tData[16] into tContextNames
   
@@ -235,24 +242,21 @@ function handleDeleteIndication pConnectionID, pID, pUsername
     return jsonError("Indication ID required")
   end if
   
-  -- Validate ID to prevent SQL injection
-  put validateNumericID(pID) into tSafeID
-  if tSafeID is empty then
+  if validateNumericID(pID) is empty then
     return jsonError("Invalid indication ID")
   end if
+  
+  put pID into tSafeID
   
   if pUsername is empty then
     put "system" into pUsername
   end if
   
-  -- Get old data for audit
   put handleReadIndication(pConnectionID, tSafeID) into tOldDataJSON
   
-  -- Delete contexts first
   put "DELETE FROM indication_contexts WHERE indication_id =" && tSafeID into tSQL
   revExecuteSQL pConnectionID, tSQL
   
-  -- Delete indication
   put "DELETE FROM indications WHERE id =" && tSafeID into tSQL2
   revExecuteSQL pConnectionID, tSQL2
   
@@ -260,7 +264,6 @@ function handleDeleteIndication pConnectionID, pID, pUsername
     return jsonError(the result)
   end if
   
-  -- Log to audit
   put sqlEscape(pUsername) into tSafeUser
   put sqlEscape(tOldDataJSON) into tSafeJSON
   put "INSERT INTO audit (audit_user, audit_table, audit_primarykey, action, old_values)" into tAuditSQL

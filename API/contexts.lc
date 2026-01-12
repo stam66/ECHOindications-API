@@ -1,5 +1,6 @@
 <?lc
 -- Contexts CRUD API
+-- All actions are PUBLIC (read-only access)
 
 include "lib/db-functions.lc"
 
@@ -18,12 +19,15 @@ on startup
   
   switch tAction
     case "list"
+      -- PUBLIC: No auth required
       put handleListContexts(tConnectionID, tIncludeInactive) into tResponse
       break
     case "read"
+      -- PUBLIC: No auth required
       put handleReadContext(tConnectionID, tID) into tResponse
       break
     case "with_counts"
+      -- PUBLIC: No auth required
       put handleContextsWithCounts(tConnectionID) into tResponse
       break
     default

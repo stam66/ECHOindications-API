@@ -6,6 +6,9 @@ include "lib/db-functions.lc"
 on startup
   put header "Content-Type: application/json"
   
+  -- Require authentication (exits script if fails)
+  put requireAuth() into tAuthUser
+  
   put $_GET["action"] into tAction
   put $_GET["username"] into tUsername
   

@@ -1,22 +1,22 @@
 <?lc
 -- ============================================================================
--- DATABASE HELPER FUNCTIONS FOR ECHOINDICATIONS API
+-- DATABASE HELPER FUNCTIONS for LiveCode Server API
+-- ============================================================================
+-- Version: 2.1 - Fixed HMAC with Manual XOR (No bitXor dependency)
+-- Includes: Database, JSON, Security, Passwords, JWT
+-- Dependencies: photon-library.lc, settings.lc
 -- ============================================================================
 
--- Include PhotonJSON library (pure LiveCode, no externals)
+-- Include dependencies
 include "photon-library.lc"
-
--- Include database configuration (git-ignored file)
 include "settings.lc"
 
-
-
 -- ============================================================================
--- DATABASE CONNECTION
+-- DATABASE FUNCTIONS
 -- ============================================================================
 
--- Database connection function
--- Uses configuration from database.lc (git-ignored)
+-- Connect to MySQL database
+-- Returns: Connection ID (number) or ERROR string
 function dbConnect
   put getDBHost() into tHost
   put getDBName() into tDatabase
@@ -34,17 +34,22 @@ end dbConnect
 
 
 -- ============================================================================
--- JSON RESPONSE HELPERS
+-- JSON RESPONSE FUNCTIONS
 -- ============================================================================
 
--- Function to return JSON error using PhotonJSON's JSONStringify
+-- Return JSON error response
+-- Parameters: pMessage (String) - Error message
+-- Returns: JSON string with error status
 function jsonError pMessage
   put pMessage into tResult["message"]
   put "error" into tResult["status"]
   return JSONStringify(tResult)
 end jsonError
 
--- Function to return JSON success with data using PhotonJSON's JSONStringify
+
+-- Return JSON success response
+-- Parameters: pData (Any) - Data to return
+-- Returns: JSON string with success status
 function jsonSuccess pData
   put pData into tResult["data"]
   put "success" into tResult["status"]
@@ -56,7 +61,21 @@ end jsonSuccess
 -- SQL SECURITY FUNCTIONS
 -- ============================================================================
 
--- Function to escape SQL string
+-- Trim whitespace from both ends of string
+-- Parameters: pString (String) - String to trim
+-- Returns: String without leading/trailing spaces
+function trimString pString
+  -- Remove leading whitespace
+  put replaceText(pString, "^\s+", empty) into pString
+  -- Remove trailing whitespace
+  put replaceText(pString, "\s+$", empty) into pString
+  return pString
+end trimString
+
+
+-- Escape SQL string to prevent injection
+-- Parameters: pString (String) - String to escape
+-- Returns: Escaped string safe for SQL
 function sqlEscape pString
   replace "\" with "\\" in pString
   replace "'" with "\'" in pString
@@ -66,149 +85,250 @@ function sqlEscape pString
   return pString
 end sqlEscape
 
--- Validate and sanitize numeric ID
--- Parameters:
---   pID (Any) - ID value to validate
--- Returns: Numeric ID or empty if invalid
--- Note: Prevents SQL injection in numeric fields
+
+-- Validate numeric ID to prevent SQL injection
+-- Parameters: pID (Any) - ID to validate
+-- Returns: Valid integer or empty string
 function validateNumericID pID
-  -- Remove any whitespace
-  put trim(pID) into pID
+  -- Remove whitespace
+  put trimString(pID) into pID
   
-  -- Check if it's a positive integer
-  if pID is not a number then
+  -- Check if empty
+  if pID is empty then
     return empty
   end if
   
+  -- Check if it's a number
   if pID is not an integer then
     return empty
   end if
   
-  if pID < 1 then
+  
+  -- Reject negative numbers
+  if tIntID < 0 then
     return empty
   end if
   
-  -- Return as number (prevents injection like "1.0")
-  return (pID + 0)
+  -- Reject if conversion changed the value significantly
+  if pID contains " " or pID contains ";" or pID contains "-" or pID contains "'" then
+    return empty
+  end if
+  
+  return pID + 0
 end validateNumericID
 
 
 -- ============================================================================
--- PASSWORD HASHING WITH SALT AND ITERATIONS
+-- BITWISE HELPER FUNCTIONS
 -- ============================================================================
 
--- Get password hashing iterations (configurable)
--- Returns: Number - Iterations for password hashing (default: 1000)
+-- Convert binary hash to hexadecimal string
+-- Parameters: pBinary (String) - Binary data
+-- Returns: Lowercase hex string
+function binaryToHex pBinary
+  put empty into tHex
+  repeat with i = 1 to the length of pBinary
+    put charToNum(char i of pBinary) into tByte
+    put baseConvert(tByte, 10, 16) into tHexByte
+    -- Pad with leading zero if needed
+    if the length of tHexByte = 1 then
+      put "0" before tHexByte
+    end if
+    put tHexByte after tHex
+  end repeat
+  return toLower(tHex)
+end binaryToHex
+
+
+-- Convert hexadecimal string to binary
+-- Parameters: pHex (String) - Hex string
+-- Returns: Binary data
+function hexToBinary pHex
+  -- Validate input
+  if pHex is empty then
+    return empty
+  end if
+  
+  -- Remove any whitespace
+  put replaceText(pHex, "\s+", empty) into pHex
+  
+  put empty into tBinary
+  repeat with i = 1 to the length of pHex step 2
+    put char i to (i+1) of pHex into tHexPair
+    -- Skip if not a valid hex pair
+    if the length of tHexPair < 2 then
+      exit repeat
+    end if
+    
+    -- Validate hex characters (0-9, A-F, a-f)
+    put "0123456789ABCDEFabcdef" into tValidChars
+    if char 1 of tHexPair is not in tValidChars or char 2 of tHexPair is not in tValidChars then
+      -- Skip invalid hex pair
+      next repeat
+    end if
+    
+    -- Convert hex pair to decimal
+    put baseConvert(tHexPair, 16, 10) into tDecimal
+    
+    -- Ensure valid decimal result
+    if tDecimal is empty or tDecimal is not a number then
+      next repeat
+    end if
+    
+    -- Ensure value is within valid byte range (0-255)
+    put tDecimal mod 256 into tDecimal
+    
+    put numToChar(tDecimal) after tBinary
+  end repeat
+  return tBinary
+end hexToBinary
+
+
+-- Manual XOR implementation (bitwise exclusive OR)
+-- Parameters: pA, pB (Integers 0-255) - Bytes to XOR
+-- Returns: Integer result of A XOR B
+function xorByte pA, pB
+  put 0 into tResult
+  put 1 into tBit
+  
+  repeat 8 times
+    put pA mod 2 into tBitA
+    put pB mod 2 into tBitB
+    
+    if tBitA is not tBitB then
+      put tResult + tBit into tResult
+    end if
+    
+    put pA div 2 into pA
+    put pB div 2 into pB
+    put tBit * 2 into tBit
+  end repeat
+  
+  return tResult
+end xorByte
+
+
+-- ============================================================================
+-- PASSWORD HASHING FUNCTIONS
+-- ============================================================================
+
+-- Get number of password hashing iterations (configurable)
+-- Returns: Integer (default 1000)
 function getPasswordIterations
   return 1000
 end getPasswordIterations
 
+
 -- Generate random salt for password hashing
--- Returns: String - Random hex salt (32 characters)
+-- Returns: 32-character random string
 function generateSalt
-  local tSalt
-  repeat 16 times
-    put random(255) into tByte
-    put baseConvert(tByte, 10, 16) after tSalt
+  put "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789" into tChars
+  put empty into tSalt
+  
+  repeat 32 times
+    put random(62) into tPos
+    put char tPos of tChars after tSalt
   end repeat
+  
   return tSalt
 end generateSalt
 
--- Hash password with salt and iterations
+
+-- Hash password with salt using PBKDF2-like approach
 -- Parameters:
 --   pPassword (String) - Plain text password
---   pSalt (String) - Salt value (generated if empty)
--- Returns: String - Format "salt:hash"
+--   pSalt (String) - Salt value (32 chars recommended)
+-- Returns: "salt:hash" format string (hash is hex)
 function hashPassword pPassword, pSalt
-  -- Generate salt if not provided
-  if pSalt is empty then
-    put generateSalt() into pSalt
-  end if
-  
-  -- Start with salted password
-  put pSalt & pPassword into tHash
-  
-  -- Hash multiple times for PBKDF2-like strength
   put getPasswordIterations() into tIterations
+  put pPassword into tHash
+  
   repeat tIterations times
-    put messageDigest(tHash, "SHA256") into tHash
+    put pSalt & tHash into tData
+    put messageDigest(tData, "SHA-256") into tBinary
+    -- Convert binary to hex for consistent storage
+    put binaryToHex(tBinary) into tHash
   end repeat
   
-  -- Return salt:hash format
   return pSalt & ":" & tHash
 end hashPassword
+
 
 -- Verify password against stored hash
 -- Parameters:
 --   pPassword (String) - Plain text password to verify
---   pStoredHash (String) - Stored hash (format: "salt:hash" or plain hash for legacy)
--- Returns: Boolean - True if password matches
+--   pStoredHash (String) - Stored hash in "salt:hash" format
+-- Returns: true/false
 function verifyPassword pPassword, pStoredHash
-  -- Check for new format (salt:hash)
+  -- Check if hash contains salt (new format: "salt:hash")
   if ":" is in pStoredHash then
-    -- New salted format
-    set itemDelimiter to ":"
+    -- New format with salt
+    set the itemDelimiter to ":"
     put item 1 of pStoredHash into tSalt
-    put item 2 of pStoredHash into tStoredHash
+    put item 2 of pStoredHash into tStoredHashValue
     
-    -- Hash provided password with same salt
+    -- Hash the provided password with the stored salt
     put hashPassword(pPassword, tSalt) into tNewHash
-    set itemDelimiter to ":"
-    put item 2 of tNewHash into tComputedHash
+    set the itemDelimiter to ":"
+    put item 2 of tNewHash into tNewHashValue
     
-    return tComputedHash = tStoredHash
+    -- Compare hashes (case-insensitive)
+    return (toLower(tNewHashValue) = toLower(tStoredHashValue))
   else
-    -- Legacy format (plain SHA256, no salt)
-    put messageDigest(pPassword, "SHA256") into tComputedHash
-    return tComputedHash = pStoredHash
+    -- Old format without salt - direct hash comparison
+    put messageDigest(pPassword, "SHA-256") into tBinary
+    put binaryToHex(tBinary) into tPlainHash
+    -- Case-insensitive comparison
+    return (toLower(tPlainHash) = toLower(pStoredHash))
   end if
 end verifyPassword
 
--- Check if password hash needs migration to salted format
--- Parameters:
---   pStoredHash (String) - Current stored hash
--- Returns: Boolean - True if migration needed
-function needsPasswordMigration pStoredHash
-  return ":" is not in pStoredHash
+
+-- Check if password hash needs migration to new format
+-- Parameters: pHash (String) - Stored password hash
+-- Returns: true if needs migration, false if already new format
+function needsPasswordMigration pHash
+  return (":" is not in pHash)
 end needsPasswordMigration
 
 
 -- ============================================================================
--- JWT AUTHENTICATION FUNCTIONS
+-- JWT FUNCTIONS
 -- ============================================================================
--- Note: getJWTSecret() is in secret.lc (git-ignored file)
 
--- Get JWT token expiration time in seconds
--- Returns: Number - Seconds until expiration (default: 1800 = 30 minutes)
+-- Get JWT token expiration time in seconds (configurable)
+-- Returns: Integer (default 1800 = 30 minutes)
 function getJWTExpiration
   return 1800
 end getJWTExpiration
 
--- Generate JWT token with user data (convenience wrapper)
+
+-- Generate JWT token (convenience function)
 -- Parameters:
---   pUserID (Number) - User ID
+--   pUserID (Integer) - User ID
 --   pUsername (String) - Username
 --   pName (String) - User's full name
---   pExpiry (Number) - Optional expiration in seconds (default: 1800 = 30 min)
+--   pExpiration (Integer) - Expiration time in seconds (optional)
 -- Returns: JWT token string
-function generateJWT pUserID, pUsername, pName, pExpiry
-  -- Build payload array
+function generateJWT pUserID, pUsername, pName, pExpiration
   put pUserID into tPayload["user_id"]
   put pUsername into tPayload["username"]
   put pName into tPayload["name"]
   
-  -- Add custom expiration if provided
-  if pExpiry is a number and pExpiry > 0 then
-    put the seconds + pExpiry into tPayload["exp"]
+  if pExpiration is not empty and pExpiration is a number then
+    -- Add timestamps
     put the seconds into tPayload["iat"]
+    put the seconds + pExpiration into tPayload["exp"]
     
-    -- Create token without automatic expiration (we set it manually)
+    -- Create header
     put "HS256" into tHeader["alg"]
     put "JWT" into tHeader["typ"]
     
+    -- Encode header and payload
     put base64URLEncode(JSONStringify(tHeader)) into tEncodedHeader
     put base64URLEncode(JSONStringify(tPayload)) into tEncodedPayload
     
+    -- Create signature
     put tEncodedHeader & "." & tEncodedPayload into tData
     put createSignature(tData, getJWTSecret()) into tSignature
     
@@ -223,6 +343,7 @@ function generateJWT pUserID, pUsername, pName, pExpiry
   end if
 end generateJWT
 
+
 -- Create signed JWT token
 -- Parameters:
 --   pPayload (Array) - User data to encode (user_id, username, etc.)
@@ -232,7 +353,7 @@ function createJWT pPayload
   put the seconds into tPayload["iat"]
   put the seconds + getJWTExpiration() into tPayload["exp"]
   
-  -- Merge with provided payload
+  -- Merge provided payload
   repeat for each key tKey in pPayload
     put pPayload[tKey] into tPayload[tKey]
   end repeat
@@ -253,41 +374,48 @@ function createJWT pPayload
     return tSignature
   end if
   
-  -- Return complete token
   return tEncodedHeader & "." & tEncodedPayload & "." & tSignature
 end createJWT
+
 
 -- Verify JWT token
 -- Parameters:
 --   pToken (String) - JWT token to verify
--- Returns: Array with decoded payload or empty if invalid
+-- Returns: Payload array if valid, empty if invalid/expired
 function verifyJWT pToken
   -- Split token into parts
-  split pToken by "."
+  set the itemDelimiter to "."
   
-  if the number of elements in pToken is not 3 then
+  if the number of items in pToken is not 3 then
     return empty
   end if
   
-  put pToken[1] into tEncodedHeader
-  put pToken[2] into tEncodedPayload
-  put pToken[3] into tProvidedSignature
+  put item 1 of pToken into tEncodedHeader
+  put item 2 of pToken into tEncodedPayload
+  put item 3 of pToken into tProvidedSignature
   
   -- Verify signature
   put tEncodedHeader & "." & tEncodedPayload into tData
   put createSignature(tData, getJWTSecret()) into tExpectedSignature
+  
+  if tExpectedSignature begins with "ERROR:" then
+    return empty
+  end if
   
   if tProvidedSignature is not tExpectedSignature then
     return empty
   end if
   
   -- Decode payload
-  put base64URLDecode(tEncodedPayload) into tPayloadJSON
-  put JSONParser(tPayloadJSON) into tPayload
+  put JSONParser(base64URLDecode(tEncodedPayload)) into tPayload
+  
+  if tPayload is not an array then
+    return empty
+  end if
   
   -- Check expiration
-  if tPayload["exp"] is not empty then
-    if tPayload["exp"] < the seconds then
+  if tPayload["exp"] is a number then
+    if the seconds > tPayload["exp"] then
       return empty
     end if
   end if
@@ -295,55 +423,150 @@ function verifyJWT pToken
   return tPayload
 end verifyJWT
 
+
+-- Require authentication for protected endpoints
+-- Checks Authorization header and verifies JWT token
+-- Returns: User payload array or exits with 401 error
+function requireAuth
+  -- Get Authorization header
+  put $_SERVER["HTTP_AUTHORIZATION"] into tAuthHeader
+  
+  -- Try alternate header name (some servers use this)
+  if tAuthHeader is empty then
+    put $_SERVER["REDIRECT_HTTP_AUTHORIZATION"] into tAuthHeader
+  end if
+  
+  if tAuthHeader is empty then
+    // put header "HTTP/1.1 401 Unauthorized"
+    put header "Status: 401 Unauthorized" 
+    put jsonError("Authentication required - no token provided")
+    exit to top
+  end if
+  
+  -- Extract Bearer token
+  if tAuthHeader begins with "Bearer " then
+    put char 8 to -1 of tAuthHeader into tToken
+  else
+    // put header "HTTP/1.1 401 Unauthorized"
+    put header "Status: 401 Unauthorized" 
+    put jsonError("Invalid authorization header format - use Bearer token")
+    exit to top
+  end if
+  
+  -- Verify token
+  put verifyJWT(tToken) into tPayload
+  
+  if tPayload is empty or tPayload is not an array then
+    // put header "HTTP/1.1 401 Unauthorized"
+    put header "Status: 401 Unauthorized" 
+    put jsonError("Invalid or expired token")
+    exit to top
+  end if
+  
+  -- Return user payload
+  return tPayload
+end requireAuth
+
+
 -- Create HMAC-SHA256 signature for JWT
 -- Parameters:
 --   pData (String) - Data to sign
 --   pSecret (String) - Secret key
 -- Returns: Base64URL encoded signature
 function createSignature pData, pSecret
-  -- Calculate HMAC-SHA256
-  put messageDigest(pData, "SHA256", pSecret) into tHash
+  -- Calculate HMAC-SHA256 (returns hex string)
+  put hmacSHA256(pData, pSecret) into tHash
   
-  if tHash begins with "error" then
+  if tHash begins with "ERROR:" then
     return "ERROR: Failed to create signature"
   end if
   
   -- Convert hex to binary
-  repeat with i = 1 to the length of tHash step 2
-    put numToChar(baseConvert(char i to i+1 of tHash, 16, 10)) after tBinary
-  end repeat
+  put hexToBinary(tHash) into tBinary
   
   -- Base64URL encode
   return base64URLEncode(tBinary)
 end createSignature
 
--- Base64URL encode (URL-safe base64 without padding)
+
+-- HMAC-SHA256 implementation for LiveCode (with manual XOR)
 -- Parameters:
---   pData (String) - Data to encode
+--   pMessage (String) - Message to hash
+--   pKey (String) - Secret key
+-- Returns: Hex string of HMAC-SHA256
+function hmacSHA256 pMessage, pKey
+  -- Block size for SHA256 is 64 bytes
+  put 64 into tBlockSize
+  
+  -- If key is longer than block size, hash it
+  if the length of pKey > tBlockSize then
+    put messageDigest(pKey, "SHA-256") into pKey
+    -- messageDigest returns binary (32 bytes)
+  end if
+  
+  -- Pad key to block size with zeros
+  if the length of pKey < tBlockSize then
+    repeat tBlockSize - the length of pKey times
+      put numToChar(0) after pKey
+    end repeat
+  end if
+  
+  -- Create inner and outer padding using manual XOR
+  put empty into tInnerPad
+  put empty into tOuterPad
+  
+  repeat with i = 1 to tBlockSize
+    put charToNum(char i of pKey) into tKeyByte
+    put numToChar(xorByte(tKeyByte, 54)) after tInnerPad  -- 0x36 = 54
+    put numToChar(xorByte(tKeyByte, 92)) after tOuterPad  -- 0x5C = 92
+  end repeat
+  
+  -- Calculate inner hash (messageDigest returns binary)
+  put messageDigest(tInnerPad & pMessage, "SHA-256") into tInnerBinary
+  
+  -- Calculate outer hash (messageDigest returns binary)
+  put messageDigest(tOuterPad & tInnerBinary, "SHA-256") into tFinalBinary
+  
+  -- Convert binary to hex for return
+  return binaryToHex(tFinalBinary)
+end hmacSHA256
+
+
+-- Base64URL encode (URL-safe Base64)
+-- Parameters: pData (String) - Data to encode
 -- Returns: Base64URL encoded string
 function base64URLEncode pData
   put base64Encode(pData) into tEncoded
+  
+  -- Remove newlines (base64Encode adds them every 76 chars for MIME compliance)
+  replace return with empty in tEncoded
+  replace linefeed with empty in tEncoded
+  replace numToChar(13) with empty in tEncoded  -- CR
+  replace numToChar(10) with empty in tEncoded  -- LF
+  
+  -- Make URL-safe
   replace "+" with "-" in tEncoded
   replace "/" with "_" in tEncoded
   replace "=" with "" in tEncoded
+  
   return tEncoded
 end base64URLEncode
 
+
 -- Base64URL decode
--- Parameters:
---   pData (String) - Base64URL encoded data
+-- Parameters: pData (String) - Base64URL string to decode
 -- Returns: Decoded string
 function base64URLDecode pData
-  -- Convert back to standard base64
+  -- Convert back from URL-safe
   replace "-" with "+" in pData
   replace "_" with "/" in pData
   
   -- Add padding if needed
   put the length of pData mod 4 into tMod
-  if tMod is not 0 then
-    repeat 4 - tMod times
-      put "=" after pData
-    end repeat
+  if tMod is 2 then
+    put "==" after pData
+  else if tMod is 3 then
+    put "=" after pData
   end if
   
   return base64Decode(pData)

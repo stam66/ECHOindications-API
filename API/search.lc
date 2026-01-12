@@ -1,5 +1,6 @@
 <?lc
 -- Search API - Using LiveCode Arrays
+-- All actions are PUBLIC (read-only search)
 
 include "lib/db-functions.lc"
 
@@ -21,9 +22,11 @@ on startup
   
   switch tAction
     case "keyword"
+      -- PUBLIC: No auth required
       put handleKeywordSearch(tConnectionID, tKeyword) into tResponse
       break
     case "advanced"
+      -- PUBLIC: No auth required
       put handleAdvancedSearch(tConnectionID, tKeyword, tContextID, tUrgency, tPrimaryCare, tSource) into tResponse
       break
     default
@@ -93,12 +96,9 @@ function handleAdvancedSearch pConnectionID, pKeyword, pContextID, pUrgency, pPr
   end if
   
   if pContextID is not empty then
-    -- Validate context ID to prevent SQL injection
-    put validateNumericID(pContextID) into tSafeContextID
-    if tSafeContextID is empty then
-      return jsonError("Invalid context ID")
+    if validateNumericID(pContextID) then
+      put " AND i.id IN (SELECT indication_id FROM indication_contexts WHERE context_id =" && pContextID & ")" after tSQL
     end if
-    put " AND i.id IN (SELECT indication_id FROM indication_contexts WHERE context_id =" && tSafeContextID & ")" after tSQL
   end if
   
   if pUrgency is not empty then
