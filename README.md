@@ -95,9 +95,6 @@ API/
 - `API/TEMPLATE_README.md` - Complete template documentation
 - `API/database/PLACEHOLDER_schema.sql.example` - Generic table schema
 - `API/database/audit_schema.sql.example` - Audit table schema
-- `API/PLACEHOLDER.lc.example` - Generic endpoint template
-- `API/TEMPLATE_README.md` - Template documentation
-- `API/database/PLACEHOLDER_schema.sql.example` - Generic schema
 
 ---
 
