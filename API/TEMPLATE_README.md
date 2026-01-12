@@ -1,6 +1,63 @@
-# Generic API Endpoint Template
+# Generic RPC API Endpoint Template
 
-This template provides a reusable foundation for creating secure REST API endpoints with LiveCode Server. It includes authentication, security headers, rate limiting, and common CRUD operations.
+This template provides a reusable foundation for creating secure RPC (Remote Procedure Call) API endpoints with LiveCode Server. It includes authentication, security headers, rate limiting, and common CRUD operations.
+
+## 🔄 RPC vs REST
+
+This is an **RPC-style API**, not REST:
+- **Action-based**: Uses `?action=` parameter to specify operations
+- **Procedure-oriented**: Calls specific procedures/functions
+- **Single endpoint per resource**: Each `.lc` file handles multiple actions
+- **Query parameters**: Operations defined in URL params, not HTTP methods
+
+**Example:**
+```
+/API/products.lc?action=list
+/API/products.lc?action=read&id=5
+/API/products.lc?action=create
+```
+
+**Benefits of RPC approach:**
+- Natural fit for LiveCode Server
+- Clear, explicit action names
+- Easy to add custom actions beyond CRUD
+- Simple testing (can use browser for GET requests)
+
+## 📡 HTTP Methods in RPC APIs
+
+### When to Use GET vs POST
+
+**Use GET for:**
+- **Read operations** (list, read, search)
+- **Idempotent actions** (multiple calls produce same result)
+- **Cacheable requests**
+- **No sensitive data in request**
+
+```bash
+# GET examples
+GET /API/products.lc?action=list
+GET /API/products.lc?action=read&id=5
+GET /API/products.lc?action=search&keyword=laptop
+```
+
+**Use POST for:**
+- **Write operations** (create, update, delete)
+- **Authentication** (credentials in body)
+- **Non-idempotent actions** (each call may produce different results)
+- **Sensitive data** (passwords, tokens, personal info)
+- **Large payloads** (JSON body instead of URL params)
+
+```bash
+# POST examples
+POST /API/products.lc?action=create
+POST /API/products.lc?action=update
+POST /API/auth.lc?action=login
+```
+
+**Why?**
+- GET requests appear in browser history and server logs
+- GET has URL length limits (usually 2048 chars)
+- POST keeps data in request body (more secure, unlimited size)
 
 ## 📁 Template Files
 
@@ -78,14 +135,30 @@ end switch
 ### 4. Test Your Endpoint
 
 ```bash
-# Test public endpoint (no auth)
-curl https://your-domain.com/API/products.lc?action=list
+# Test GET endpoint (list - no auth needed)
+curl -X GET https://your-domain.com/API/products.lc?action=list
 
-# Test protected endpoint (requires JWT)
-curl https://your-domain.com/API/products.lc?action=create \
+# Test GET endpoint (read specific record)
+curl -X GET https://your-domain.com/API/products.lc?action=read&id=5
+
+# Test GET endpoint (search)
+curl -X GET "https://your-domain.com/API/products.lc?action=search&keyword=laptop"
+
+# Test POST endpoint (create - requires auth)
+curl -X POST https://your-domain.com/API/products.lc?action=create \
   -H "Authorization: Bearer YOUR_JWT_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"name":"New Product","description":"Test","status":"active"}'
+
+# Test POST endpoint (update - requires auth)
+curl -X POST https://your-domain.com/API/products.lc?action=update \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"id":5,"name":"Updated Product","status":"inactive"}'
+
+# Test POST endpoint (delete - requires auth)
+curl -X POST https://your-domain.com/API/products.lc?action=delete&id=5 \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN"
 ```
 
 ## 📝 Customization Guide

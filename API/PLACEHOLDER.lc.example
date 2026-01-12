@@ -1,9 +1,17 @@
 <?lc
 -- ============================================================================
--- GENERIC API ENDPOINT TEMPLATE
+-- GENERIC RPC API ENDPOINT TEMPLATE
 -- ============================================================================
+-- This is an RPC (Remote Procedure Call) API using action-based routing
+-- Example: /API/products.lc?action=list
+--
 -- Replace "PLACEHOLDER" with your table name (e.g., "products", "orders", "posts")
 -- Customize the actions and fields based on your database schema
+--
+-- HTTP METHOD USAGE:
+-- - Use GET for: list, read, search (read-only, idempotent operations)
+-- - Use POST for: create, update, delete (write operations with body data)
+-- - GET appears in logs/history, POST data is in request body (more secure)
 --
 -- SECURITY CONFIGURATION:
 -- - Set PUBLIC or PROTECTED for each action based on your requirements
@@ -45,34 +53,40 @@ on startup
   switch tAction
     case "list"
       -- PUBLIC: Get all records
+      -- HTTP Method: GET
       put handleListPLACEHOLDER(tConnectionID) into tResponse
       break
 
     case "read"
       -- PUBLIC: Get single record by ID
+      -- HTTP Method: GET
       put handleReadPLACEHOLDER(tConnectionID, tID) into tResponse
       break
 
     case "create"
       -- PROTECTED: Create new record (requires authentication)
+      -- HTTP Method: POST (data in body)
       put requireAuth() into tAuthPayload
       put handleCreatePLACEHOLDER(tConnectionID, tPostData, tAuthPayload) into tResponse
       break
 
     case "update"
       -- PROTECTED: Update existing record (requires authentication)
+      -- HTTP Method: POST (data in body)
       put requireAuth() into tAuthPayload
       put handleUpdatePLACEHOLDER(tConnectionID, tPostData, tAuthPayload) into tResponse
       break
 
     case "delete"
       -- PROTECTED: Delete record (requires authentication)
+      -- HTTP Method: POST (for security, even though no body needed)
       put requireAuth() into tAuthPayload
       put handleDeletePLACEHOLDER(tConnectionID, tID, tAuthPayload) into tResponse
       break
 
     case "search"
       -- PUBLIC: Search records
+      -- HTTP Method: GET
       put $_GET["keyword"] into tKeyword
       put handleSearchPLACEHOLDER(tConnectionID, tKeyword) into tResponse
       break
