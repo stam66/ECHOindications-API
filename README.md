@@ -45,7 +45,7 @@ API/
 - `login` (POST) - Authenticate and get JWT token
 - `refresh` (GET) - Refresh JWT token
 
-### **indications.lc** - Medical Indications
+### **indications.lc** - Echocardiography Indications
 - `list` (GET) - List all indications (PUBLIC)
 - `list_by_context` (GET) - Filter by context (PUBLIC)
 - `read` (GET) - Get single indication (PUBLIC)
@@ -94,3 +94,21 @@ API/
 - `API/TEMPLATE_README.md` - Complete template documentation
 - `API/database/PLACEHOLDER_schema.sql.example` - Generic table schema
 - `API/database/audit_schema.sql.example` - Audit table schema
+- `API/PLACEHOLDER.lc.example` - Generic endpoint template
+- `API/TEMPLATE_README.md` - Template documentation
+- `API/database/PLACEHOLDER_schema.sql.example` - Generic schema
+
+---
+
+Copyright 2026 Dr Stam Kapetanakis
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+
