@@ -61,8 +61,10 @@ POST /API/auth.lc?action=login
 
 ## 📁 Template Files
 
-- **`PLACEHOLDER.lc.example`** - Generic endpoint template
+- **`PLACEHOLDER.lc.example`** - Generic CRUD endpoint template
+- **`audit.lc.example`** - Audit trail endpoint (optional but recommended)
 - **`database/PLACEHOLDER_schema.sql.example`** - Database table schema template
+- **`database/audit_schema.sql.example`** - Audit table schema (for audit logging)
 - **Core library files** (no modification needed):
   - `lib/db-functions.lc` - Database, security, JWT, and rate limiting functions
   - `lib/photon-library.lc` - JSON parsing and serialization
@@ -256,6 +258,59 @@ case "create"
 
   put handleCreateProducts(tConnectionID, tPostData, tAuthPayload) into tResponse
   break
+```
+
+#### 6. **Add Audit Logging** (Recommended)
+
+Track all data changes for compliance and debugging:
+
+```bash
+# 1. Set up audit table
+cp API/database/audit_schema.sql.example API/database/audit_schema.sql
+mysql -u your_user -p your_database < API/database/audit_schema.sql
+
+# 2. Set up audit endpoint
+cp API/audit.lc.example API/audit.lc
+# No changes needed - it works as-is!
+
+# 3. Integrate into your endpoints (after CREATE/UPDATE/DELETE)
+```
+
+**Example: Log after creating a product**
+```livecode
+function handleCreateProducts pConnectionID, pPostData, pAuthPayload
+  -- ... create product code ...
+
+  -- Log to audit table
+  put "INSERT INTO audit (audit_user, audit_table, audit_primarykey, action, changed_fields)" into tAuditSQL
+  put " VALUES ('" & sqlEscape(pAuthPayload["username"]) & "', 'products', " & tNewID & ", 'INSERT', 'name,description,price')" after tAuditSQL
+  revExecuteSQL pConnectionID, tAuditSQL
+
+  return jsonSuccess(tResult)
+end handleCreateProducts
+```
+
+**Example: Log after updating**
+```livecode
+  -- Log to audit table
+  put "INSERT INTO audit (audit_user, audit_table, audit_primarykey, action, changed_fields)" into tAuditSQL
+  put " VALUES ('" & sqlEscape(tUsername) & "', 'products', " & tID & ", 'UPDATE', 'price,quantity')" after tAuditSQL
+  revExecuteSQL pConnectionID, tAuditSQL
+```
+
+**Query audit logs:**
+```bash
+# Get recent activity
+curl -X GET https://your-domain.com/API/audit.lc?action=recent&limit=50 \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN"
+
+# Get history for specific record
+curl -X GET "https://your-domain.com/API/audit.lc?action=by_record&table=products&record_id=123" \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN"
+
+# Get all changes by user
+curl -X GET "https://your-domain.com/API/audit.lc?action=by_user&username=admin&limit=100" \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN"
 ```
 
 ## 🔐 Security Features (Built-in)
