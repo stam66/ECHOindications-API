@@ -45,7 +45,7 @@ API/
 - `login` (POST) - Authenticate and get JWT token
 - `refresh` (GET) - Refresh JWT token
 
-### **indications.lc** - Medical Indications
+### **indications.lc** - Echocardiography Indications
 - `list` (GET) - List all indications (PUBLIC)
 - `list_by_context` (GET) - Filter by context (PUBLIC)
 - `read` (GET) - Get single indication (PUBLIC)
