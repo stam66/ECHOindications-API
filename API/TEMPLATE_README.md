@@ -63,15 +63,31 @@ POST /API/auth.lc?action=login
 
 - **`PLACEHOLDER.lc.example`** - Generic CRUD endpoint template
 - **`audit.lc.example`** - Audit trail endpoint (optional but recommended)
+- **`lib/settings.lc.example`** - Database and JWT configuration template
 - **`database/PLACEHOLDER_schema.sql.example`** - Database table schema template
 - **`database/audit_schema.sql.example`** - Audit table schema (for audit logging)
 - **Core library files** (no modification needed):
   - `lib/db-functions.lc` - Database, security, JWT, and rate limiting functions
   - `lib/photon-library.lc` - JSON parsing and serialization
-  - `lib/settings.lc` - Database and JWT configuration (excluded from git)
   - `auth.lc` - Authentication endpoint with rate limiting
 
 ## 🚀 Quick Start
+
+### 0. Configure Database Connection
+
+```bash
+# Copy the settings template
+cp API/lib/settings.lc.example API/lib/settings.lc
+
+# Edit API/lib/settings.lc with your database credentials:
+# - Update getDBHost() (default: 127.0.0.1)
+# - Update getDBName() (your database name)
+# - Update getDBUser() (your MySQL username)
+# - Update getDBPassword() (your MySQL password)
+# - Update getJWTSecret() (generate with: openssl rand -base64 64)
+```
+
+**Important:** Never commit `settings.lc` to git. It's already in `.gitignore`.
 
 ### 1. Set Up Database
 

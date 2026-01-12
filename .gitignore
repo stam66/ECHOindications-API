@@ -203,6 +203,7 @@ htmlcov/
 # Template files are safe to commit
 !lib/secret.lc.example
 !lib/database.lc.example
+!API/lib/settings.lc.example
 
 # Database schema files are safe (no data, just structure)
 !API/database/*.sql
