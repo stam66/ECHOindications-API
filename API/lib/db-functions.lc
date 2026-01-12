@@ -92,28 +92,27 @@ end sqlEscape
 function validateNumericID pID
   -- Remove whitespace
   put trimString(pID) into pID
-  
+
   -- Check if empty
   if pID is empty then
     return empty
   end if
-  
+
   -- Check if it's a number
   if pID is not an integer then
     return empty
   end if
-  
-  
+
   -- Reject negative numbers
   if pID < 0 then
     return empty
   end if
-  
+
   -- Reject if conversion changed the value significantly
   if pID contains " " or pID contains ";" or pID contains "-" or pID contains "'" then
     return empty
   end if
-  
+
   return pID + 0
 end validateNumericID
 
@@ -212,6 +211,29 @@ end xorByte
 -- PASSWORD HASHING FUNCTIONS
 -- ============================================================================
 
+-- Constant-time string comparison to prevent timing attacks
+-- Parameters:
+--   pString1 (String) - First string to compare
+--   pString2 (String) - Second string to compare
+-- Returns: true if strings match, false otherwise
+-- Note: Always compares all characters regardless of where mismatch occurs
+function constantTimeCompare pString1, pString2
+  -- For fixed-length hashes, early length check is safe
+  if the length of pString1 is not the length of pString2 then
+    return false
+  end if
+
+  put 0 into tResult
+  repeat with i = 1 to the length of pString1
+    if charToNum(char i of pString1) is not charToNum(char i of pString2) then
+      put 1 into tResult
+    end if
+  end repeat
+
+  return (tResult = 0)
+end constantTimeCompare
+
+
 -- Get number of password hashing iterations (configurable)
 -- Returns: Integer (default 1000)
 function getPasswordIterations
@@ -266,20 +288,20 @@ function verifyPassword pPassword, pStoredHash
     set the itemDelimiter to ":"
     put item 1 of pStoredHash into tSalt
     put item 2 of pStoredHash into tStoredHashValue
-    
+
     -- Hash the provided password with the stored salt
     put hashPassword(pPassword, tSalt) into tNewHash
     set the itemDelimiter to ":"
     put item 2 of tNewHash into tNewHashValue
-    
-    -- Compare hashes (case-insensitive)
-    return (toLower(tNewHashValue) = toLower(tStoredHashValue))
+
+    -- Compare hashes using constant-time comparison to prevent timing attacks
+    return constantTimeCompare(toLower(tNewHashValue), toLower(tStoredHashValue))
   else
     -- Old format without salt - direct hash comparison
     put messageDigest(pPassword, "SHA-256") into tBinary
     put binaryToHex(tBinary) into tPlainHash
-    -- Case-insensitive comparison
-    return (toLower(tPlainHash) = toLower(pStoredHash))
+    -- Compare using constant-time comparison to prevent timing attacks
+    return constantTimeCompare(toLower(tPlainHash), toLower(pStoredHash))
   end if
 end verifyPassword
 
