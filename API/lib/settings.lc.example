@@ -6,7 +6,8 @@
 -- DO NOT commit this file to Git
 -- Add to .gitignore: lib/settings.lc
 --
--- CHANGE THE DATA BELOW TO YOUR DATA AND CHANGE EXTENSION FROM .txt TO .lc
+-- USAGE: Copy this file to settings.lc and update with your database credentials
+-- Example: cp lib/settings.lc.example lib/settings.lc
 -- ============================================================================
 
 -- Return database host
@@ -30,7 +31,7 @@ end getDBUser
 -- Return database password
 -- Returns: String - MySQL password
 function getDBPassword
-  return "YOUR-DATABSE-ADMIN-PASSWORD"
+  return "YOUR-DATABASE-ADMIN-PASSWORD"
 end getDBPassword
 
 
