@@ -40,7 +40,7 @@ end dbConnect
 -- Set security headers for all API responses
 -- Prevents common web vulnerabilities: clickjacking, XSS, MIME-sniffing
 -- Should be called at the start of every API endpoint
-function setSecurityHeaders
+on setSecurityHeaders
   -- Prevent MIME-sniffing attacks
   put header "X-Content-Type-Options: nosniff"
 
@@ -416,7 +416,7 @@ end checkRateLimit
 --   pConnectionID (Integer) - Database connection ID
 --   pIP (String) - Client IP address
 --   pEndpoint (String) - Endpoint name
-function resetRateLimit pConnectionID, pIP, pEndpoint
+on resetRateLimit pConnectionID, pIP, pEndpoint
   put sqlEscape(pIP) into tSafeIP
   put sqlEscape(pEndpoint) into tSafeEndpoint
 
