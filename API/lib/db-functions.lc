@@ -34,6 +34,41 @@ end dbConnect
 
 
 -- ============================================================================
+-- SECURITY HEADER FUNCTIONS
+-- ============================================================================
+
+-- Set security headers for all API responses
+-- Prevents common web vulnerabilities: clickjacking, XSS, MIME-sniffing
+-- Should be called at the start of every API endpoint
+function setSecurityHeaders
+  -- Prevent MIME-sniffing attacks
+  put header "X-Content-Type-Options: nosniff"
+
+  -- Prevent clickjacking attacks
+  put header "X-Frame-Options: DENY"
+
+  -- Enable browser XSS protection
+  put header "X-XSS-Protection: 1; mode=block"
+
+  -- Control referrer information
+  put header "Referrer-Policy: strict-origin-when-cross-origin"
+
+  -- CORS headers - Allow cross-origin requests
+  -- Note: Adjust the origin based on your frontend domain
+  put header "Access-Control-Allow-Origin: *"
+  put header "Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS"
+  put header "Access-Control-Allow-Headers: Authorization, Content-Type"
+  put header "Access-Control-Max-Age: 86400"
+
+  -- HSTS - Force HTTPS (uncomment when using HTTPS in production)
+  -- put header "Strict-Transport-Security: max-age=31536000; includeSubDomains"
+
+  -- Content Security Policy - Restrict resource loading
+  put header "Content-Security-Policy: default-src 'self'"
+end setSecurityHeaders
+
+
+-- ============================================================================
 -- JSON RESPONSE FUNCTIONS
 -- ============================================================================
 
@@ -312,6 +347,112 @@ end verifyPassword
 function needsPasswordMigration pHash
   return (":" is not in pHash)
 end needsPasswordMigration
+
+
+-- ============================================================================
+-- RATE LIMITING FUNCTIONS
+-- ============================================================================
+
+-- Check if IP address is rate limited
+-- Parameters:
+--   pConnectionID (Integer) - Database connection ID
+--   pIP (String) - Client IP address
+--   pEndpoint (String) - Endpoint name (e.g., "login", "api")
+--   pMaxAttempts (Integer) - Maximum attempts allowed in window
+--   pWindowSeconds (Integer) - Time window in seconds
+-- Returns: Empty string if allowed, error message if rate limited
+function checkRateLimit pConnectionID, pIP, pEndpoint, pMaxAttempts, pWindowSeconds
+  -- Escape inputs
+  put sqlEscape(pIP) into tSafeIP
+  put sqlEscape(pEndpoint) into tSafeEndpoint
+
+  -- Clean up old rate limit records first
+  put "DELETE FROM rate_limit WHERE locked_until < NOW() AND locked_until IS NOT NULL" into tSQL
+  revExecuteSQL pConnectionID, tSQL
+
+  put "DELETE FROM rate_limit WHERE last_attempt < DATE_SUB(NOW(), INTERVAL" && pWindowSeconds && "SECOND)" into tSQL
+  revExecuteSQL pConnectionID, tSQL
+
+  -- Check current rate limit status
+  put "SELECT attempts, locked_until FROM rate_limit WHERE ip_address = '" & tSafeIP & "' AND endpoint = '" & tSafeEndpoint & "'" into tSQL
+  put revDataFromQuery(tab, return, pConnectionID, tSQL) into tData
+
+  if tData begins with "revdberr" or tData is empty then
+    -- No existing record, create one
+    put "INSERT INTO rate_limit (ip_address, endpoint, attempts, last_attempt) VALUES ('" & tSafeIP & "', '" & tSafeEndpoint & "', 1, NOW())" into tSQL
+    revExecuteSQL pConnectionID, tSQL
+    return empty  -- Allow request
+  end if
+
+  -- Parse existing record
+  split tData by tab
+  put tData[1] into tAttempts
+  put tData[2] into tLockedUntil
+
+  -- Check if currently locked
+  if tLockedUntil is not empty then
+    return "Too many requests. Please try again later."
+  end if
+
+  -- Increment attempts
+  add 1 to tAttempts
+
+  if tAttempts > pMaxAttempts then
+    -- Lock the IP for the window duration
+    put "UPDATE rate_limit SET attempts =" && tAttempts & ", last_attempt = NOW(), locked_until = DATE_ADD(NOW(), INTERVAL" && pWindowSeconds && "SECOND) WHERE ip_address = '" & tSafeIP & "' AND endpoint = '" & tSafeEndpoint & "'" into tSQL
+    revExecuteSQL pConnectionID, tSQL
+    return "Too many requests. Please try again later."
+  else
+    -- Update attempts
+    put "UPDATE rate_limit SET attempts =" && tAttempts & ", last_attempt = NOW() WHERE ip_address = '" & tSafeIP & "' AND endpoint = '" & tSafeEndpoint & "'" into tSQL
+    revExecuteSQL pConnectionID, tSQL
+    return empty  -- Allow request
+  end if
+end checkRateLimit
+
+
+-- Reset rate limit for an IP address (useful after successful login)
+-- Parameters:
+--   pConnectionID (Integer) - Database connection ID
+--   pIP (String) - Client IP address
+--   pEndpoint (String) - Endpoint name
+function resetRateLimit pConnectionID, pIP, pEndpoint
+  put sqlEscape(pIP) into tSafeIP
+  put sqlEscape(pEndpoint) into tSafeEndpoint
+
+  put "DELETE FROM rate_limit WHERE ip_address = '" & tSafeIP & "' AND endpoint = '" & tSafeEndpoint & "'" into tSQL
+  revExecuteSQL pConnectionID, tSQL
+end resetRateLimit
+
+
+-- Get client IP address from request
+-- Handles proxies and load balancers
+-- Returns: IP address string
+function getClientIP
+  -- Check for IP from proxy headers first
+  put $_SERVER["HTTP_X_FORWARDED_FOR"] into tIP
+  if tIP is not empty then
+    -- X-Forwarded-For can contain multiple IPs, get the first one
+    set the itemDelimiter to ","
+    put trimString(item 1 of tIP) into tIP
+    return tIP
+  end if
+
+  -- Check for real IP header
+  put $_SERVER["HTTP_X_REAL_IP"] into tIP
+  if tIP is not empty then
+    return tIP
+  end if
+
+  -- Fall back to remote address
+  put $_SERVER["REMOTE_ADDR"] into tIP
+  if tIP is not empty then
+    return tIP
+  end if
+
+  -- Default fallback
+  return "0.0.0.0"
+end getClientIP
 
 
 -- ============================================================================

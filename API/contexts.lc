@@ -5,8 +5,10 @@
 include "lib/db-functions.lc"
 
 on startup
+  -- Set security headers first
+  setSecurityHeaders
   put header "Content-Type: application/json"
-  
+
   put $_GET["action"] into tAction
   put $_GET["id"] into tID
   put $_GET["include_inactive"] into tIncludeInactive

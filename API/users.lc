@@ -5,8 +5,10 @@
 include "lib/db-functions.lc"
 
 on startup
+  -- Set security headers first
+  setSecurityHeaders
   put header "Content-Type: application/json"
-  
+
   -- All user actions require authentication
   put requireAuth() into tAuthPayload
   
