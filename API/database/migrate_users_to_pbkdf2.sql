@@ -85,7 +85,7 @@ Function HashPasswordPBKDF2(password As String, salt As String) As String
 
   ' Compute PBKDF2 hash
   Dim hash As MemoryBlock
-  hash = Crypto.PBKDF2(salt, passwordData, 1000, 32, Crypto.HashAlgorithms.SHA2_256)
+  hash = Crypto.PBKDF2(salt, passwordData, 10000, 32, Crypto.HashAlgorithms.SHA2_256)
 
   ' Convert to hex string
   Dim hashHex As String = EncodeHex(hash)
@@ -126,7 +126,7 @@ Function VerifyPassword(password As String, storedHash As String, storedSalt As 
 
   ' Compute PBKDF2 hash with stored salt
   Dim computedHash As MemoryBlock
-  computedHash = Crypto.PBKDF2(storedSalt, passwordData, 1000, 32, Crypto.HashAlgorithms.SHA2_256)
+  computedHash = Crypto.PBKDF2(storedSalt, passwordData, 10000, 32, Crypto.HashAlgorithms.SHA2_256)
 
   ' Convert to hex string
   Dim computedHashHex As String = EncodeHex(computedHash)
@@ -166,7 +166,7 @@ ORDER BY id;
 --
 -- 2. Both API and Xojo use the same PBKDF2 parameters:
 --    - Algorithm: HMAC-SHA256
---    - Iterations: 1000
+--    - Iterations: 10,000
 --    - Output length: 32 bytes (256 bits)
 --
 -- 3. After migration, users can log in with same credentials on both:

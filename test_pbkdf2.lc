@@ -152,7 +152,7 @@ put return after tTest6
 put "In Xojo, compute:" & return after tTest6
 put "  Dim pwd As New MemoryBlock(10)" & return after tTest6
 put "  pwd.StringValue(0, 10) = \"mypassword\"" & return after tTest6
-put "  Dim hash As MemoryBlock = Crypto.PBKDF2(\"testsalt12345678901234567890ab\", pwd, 1000, 32, Crypto.HashAlgorithms.SHA2_256)" & return after tTest6
+put "  Dim hash As MemoryBlock = Crypto.PBKDF2(\"testsalt12345678901234567890ab\", pwd, 10000, 32, Crypto.HashAlgorithms.SHA2_256)" & return after tTest6
 put "  Dim hashHex As String = EncodeHex(hash)" & return after tTest6
 put "  ' Compare hashHex with the API Hash above - they should match!" & return after tTest6
 

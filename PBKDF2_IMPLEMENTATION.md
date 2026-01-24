@@ -11,7 +11,7 @@ Both systems can now use **PBKDF2** (Password-Based Key Derivation Function 2) w
 Both systems MUST use these exact parameters:
 
 - **Algorithm**: PBKDF2 with HMAC-SHA256
-- **Iterations**: 1000
+- **Iterations**: 10,000
 - **Salt Length**: 32 characters (alphanumeric)
 - **Output Length**: 32 bytes (256 bits)
 - **Storage Format**: Hash stored as 64-character hex string
@@ -47,7 +47,7 @@ passwordData.StringValue(0, password.LenB) = password
 
 ' Hash password using PBKDF2
 Dim hash As MemoryBlock
-hash = Crypto.PBKDF2(salt, passwordData, 1000, 32, Crypto.HashAlgorithms.SHA2_256)
+hash = Crypto.PBKDF2(salt, passwordData, 10000, 32, Crypto.HashAlgorithms.SHA2_256)
 
 ' Convert hash to hex string for storage
 Dim hashHex As String = EncodeHex(hash)
@@ -75,7 +75,7 @@ If rs <> Nil And Not rs.AfterLastRow Then
     passwordData.StringValue(0, password.LenB) = password
 
     Dim computedHash As MemoryBlock
-    computedHash = Crypto.PBKDF2(storedSalt, passwordData, 1000, 32, Crypto.HashAlgorithms.SHA2_256)
+    computedHash = Crypto.PBKDF2(storedSalt, passwordData, 10000, 32, Crypto.HashAlgorithms.SHA2_256)
 
     Dim computedHashHex As String = EncodeHex(computedHash)
 
@@ -238,7 +238,7 @@ To migrate an existing user to PBKDF2, you can provide a "change password" featu
 
 ## Security Notes
 
-1. **PBKDF2 Iteration Count**: 1000 iterations provides a good balance between security and performance. For higher security environments, consider increasing to 10,000+.
+1. **PBKDF2 Iteration Count**: 10,000 iterations provides a good balance between security and performance. OWASP recommends 600,000+ for maximum security, but 10,000 is suitable for most web applications while maintaining reasonable performance.
 
 2. **Salt Uniqueness**: Every password MUST have a unique salt. Never reuse salts.
 
@@ -265,7 +265,7 @@ You can verify both implementations produce the same hash by running:
 ```vb
 Dim pwd As New MemoryBlock(15)
 pwd.StringValue(0, 15) = "testpassword123"
-Dim hash As MemoryBlock = Crypto.PBKDF2("abcdefghijklmnopqrstuvwxyz012345", pwd, 1000, 32, Crypto.HashAlgorithms.SHA2_256)
+Dim hash As MemoryBlock = Crypto.PBKDF2("abcdefghijklmnopqrstuvwxyz012345", pwd, 10000, 32, Crypto.HashAlgorithms.SHA2_256)
 MessageBox EncodeHex(hash)
 ```
 
@@ -282,7 +282,7 @@ Both should produce the same output.
 
 ### Hashes Don't Match Between Systems
 
-1. **Check parameters**: Ensure both use SHA2_256, 1000 iterations, 32-byte output
+1. **Check parameters**: Ensure both use SHA2_256, 10,000 iterations, 32-byte output
 2. **Verify salt**: Salt must be identical in both systems
 3. **Check encoding**: Hash should be lowercase hex (64 characters)
 4. **MemoryBlock conversion**: In Xojo, ensure password is properly converted to MemoryBlock
