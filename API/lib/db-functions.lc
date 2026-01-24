@@ -412,42 +412,31 @@ function hashPassword pPassword, pSalt
 end hashPassword
 
 
--- Verify password against stored hash
+-- Verify password against stored hash using PBKDF2
 -- Parameters:
 --   pPassword (String) - Plain text password to verify
---   pStoredHash (String) - Stored hash in supported formats
+--   pStoredHash (String) - Stored hash in "salt:hash" format
 -- Returns: true/false
--- Supports two formats:
---   1. PBKDF2 format: "salt:hash" (API users and migrated users)
---   2. SHA-256 format: 64 hex chars (web app compatibility - MySQL SHA2)
+-- Compatible with Xojo's Crypto.PBKDF2(salt, password, 1000, 32, SHA2_256)
 function verifyPassword pPassword, pStoredHash
-  -- Check if hash contains salt (PBKDF2 format: "salt:hash")
-  if ":" is in pStoredHash then
-    -- PBKDF2 format with salt
-    set the itemDelimiter to ":"
-    put item 1 of pStoredHash into tSalt
-    put item 2 of pStoredHash into tStoredHashValue
-
-    -- Hash the provided password with the stored salt using PBKDF2
-    put hashPassword(pPassword, tSalt) into tNewHash
-    set the itemDelimiter to ":"
-    put item 2 of tNewHash into tNewHashValue
-
-    -- Compare hashes using constant-time comparison to prevent timing attacks
-    return constantTimeCompare(toLower(tNewHashValue), toLower(tStoredHashValue))
-  else
-    -- Legacy SHA-256 format (web app compatibility)
-    -- Web app uses MySQL: SHA2(password, 256)
-    if the length of pStoredHash is 64 then
-      put messageDigest(pPassword, "SHA-256") into tBinary
-      put binaryToHex(tBinary) into tSHA256Hash
-      -- Compare using constant-time comparison to prevent timing attacks
-      return constantTimeCompare(toLower(tSHA256Hash), toLower(pStoredHash))
-    end if
-
-    -- Hash format not recognized
+  -- PBKDF2 format must be "salt:hash"
+  if ":" is not in pStoredHash then
+    -- Invalid format
     return false
   end if
+
+  -- Extract salt and hash
+  set the itemDelimiter to ":"
+  put item 1 of pStoredHash into tSalt
+  put item 2 of pStoredHash into tStoredHashValue
+
+  -- Hash the provided password with the stored salt using PBKDF2
+  put hashPassword(pPassword, tSalt) into tNewHash
+  set the itemDelimiter to ":"
+  put item 2 of tNewHash into tNewHashValue
+
+  -- Compare hashes using constant-time comparison to prevent timing attacks
+  return constantTimeCompare(toLower(tNewHashValue), toLower(tStoredHashValue))
 end verifyPassword
 
 

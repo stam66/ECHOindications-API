@@ -102,18 +102,10 @@ function handleLogin pPostData
     return jsonError("Invalid username or password")
   end if
 
-  -- AUTO-MIGRATION DISABLED: Maintains compatibility with Xojo web app
-  -- The web app uses MySQL SHA2(password, 256) hashing and doesn't understand
-  -- the PBKDF2 format. If we migrate passwords to PBKDF2, users won't be able
-  -- to log into the web app anymore.
-  --
-  -- For new users created through the API, use PBKDF2:
-  -- 1. Generate salt: put generateSalt() into tSalt
-  -- 2. Hash password: put hashPassword(password, tSalt) into tHash
-  -- 3. Store both password_hash and password_salt columns
-  --
-  -- Existing users with SHA-256 hashes from the web app will continue to work
-  -- through the legacy SHA-256 verification path.
+  -- Password verified with PBKDF2
+  -- Both API and Xojo web app use compatible PBKDF2 implementations
+  -- API: pbkdf2() function with HMAC-SHA256
+  -- Xojo: Crypto.PBKDF2(salt, password, 1000, 32, SHA2_256)
 
   -- Generate JWT token
   put generateJWT(tUserData[1], tUserData[2], tUserData[5]) into tToken
