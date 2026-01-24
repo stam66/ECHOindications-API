@@ -35,6 +35,8 @@ API/
 - **JWT Authentication** - HMAC-SHA256 tokens with 30-minute expiration
 - **Rate Limiting** - IP-based protection (5 login attempts per 15 minutes)
 - **Password Security** - PBKDF2-like hashing with salt, constant-time comparison
+  - **Legacy Support** - Backward compatible with MD5, SHA-1, SHA-256, and plain text passwords
+  - **Auto-Migration** - Legacy passwords automatically upgraded to secure salted format on login
 - **SQL Injection Prevention** - Input validation and escaping
 - **Security Headers** - XSS, clickjacking, MIME-sniffing protection, CORS
 - **Audit Logging** - Comprehensive change tracking

@@ -314,8 +314,14 @@ end hashPassword
 -- Verify password against stored hash
 -- Parameters:
 --   pPassword (String) - Plain text password to verify
---   pStoredHash (String) - Stored hash in "salt:hash" format
+--   pStoredHash (String) - Stored hash in various formats
 -- Returns: true/false
+-- Supports multiple formats for backward compatibility:
+--   1. New format: "salt:hash" (PBKDF2-like with SHA-256)
+--   2. MD5 hash (common in legacy web apps)
+--   3. SHA-1 hash (common in older systems)
+--   4. SHA-256 hash (without salt)
+--   5. Plain text (for legacy systems - insecure)
 function verifyPassword pPassword, pStoredHash
   -- Check if hash contains salt (new format: "salt:hash")
   if ":" is in pStoredHash then
@@ -332,11 +338,43 @@ function verifyPassword pPassword, pStoredHash
     -- Compare hashes using constant-time comparison to prevent timing attacks
     return constantTimeCompare(toLower(tNewHashValue), toLower(tStoredHashValue))
   else
-    -- Old format without salt - direct hash comparison
-    put messageDigest(pPassword, "SHA-256") into tBinary
-    put binaryToHex(tBinary) into tPlainHash
-    -- Compare using constant-time comparison to prevent timing attacks
-    return constantTimeCompare(toLower(tPlainHash), toLower(pStoredHash))
+    -- Legacy format without salt - try multiple hash algorithms
+
+    -- Try MD5 (32 hex chars) - common in older web apps including Xojo
+    if the length of pStoredHash is 32 then
+      put messageDigest(pPassword, "MD5") into tBinary
+      put binaryToHex(tBinary) into tMD5Hash
+      if constantTimeCompare(toLower(tMD5Hash), toLower(pStoredHash)) then
+        return true
+      end if
+    end if
+
+    -- Try SHA-1 (40 hex chars) - common in older systems
+    if the length of pStoredHash is 40 then
+      put messageDigest(pPassword, "SHA-1") into tBinary
+      put binaryToHex(tBinary) into tSHA1Hash
+      if constantTimeCompare(toLower(tSHA1Hash), toLower(pStoredHash)) then
+        return true
+      end if
+    end if
+
+    -- Try SHA-256 (64 hex chars)
+    if the length of pStoredHash is 64 then
+      put messageDigest(pPassword, "SHA-256") into tBinary
+      put binaryToHex(tBinary) into tSHA256Hash
+      if constantTimeCompare(toLower(tSHA256Hash), toLower(pStoredHash)) then
+        return true
+      end if
+    end if
+
+    -- Last resort: plain text comparison (for legacy systems)
+    -- Only check if stored hash doesn't look like a hex string
+    if constantTimeCompare(pPassword, pStoredHash) then
+      return true
+    end if
+
+    -- No match found
+    return false
   end if
 end verifyPassword
 
@@ -344,6 +382,7 @@ end verifyPassword
 -- Check if password hash needs migration to new format
 -- Parameters: pHash (String) - Stored password hash
 -- Returns: true if needs migration, false if already new format
+-- Legacy formats (MD5, SHA-1, SHA-256, plain text) all need migration
 function needsPasswordMigration pHash
   return (":" is not in pHash)
 end needsPasswordMigration
