@@ -1,0 +1,165 @@
+#!/usr/bin/env lc-server
+<?lc
+-- ============================================================================
+-- PBKDF2 TEST SCRIPT
+-- ============================================================================
+-- This script tests the PBKDF2 implementation to verify it works correctly
+-- and produces consistent results.
+--
+-- Usage: lc-server test_pbkdf2.lc
+-- ============================================================================
+
+-- Include the db-functions library
+include "API/lib/db-functions.lc"
+
+put "PBKDF2 Implementation Test" & return & return into tOutput
+
+-- Test 1: Generate a password hash
+put "Test 1: Generating password hash..." & return into tTest1
+put "Password: testpassword123" & return after tTest1
+put "Salt: abcdefghijklmnopqrstuvwxyz012345" & return after tTest1
+
+put "abcdefghijklmnopqrstuvwxyz012345" into tSalt
+put hashPassword("testpassword123", tSalt) into tHash
+
+put "Generated hash: " & tHash & return after tTest1
+
+-- Verify format
+if ":" is in tHash then
+  put "✓ Hash format is correct (salt:hash)" & return after tTest1
+
+  set the itemDelimiter to ":"
+  put item 1 of tHash into tExtractedSalt
+  put item 2 of tHash into tExtractedHash
+
+  if tExtractedSalt is tSalt then
+    put "✓ Salt matches" & return after tTest1
+  else
+    put "✗ Salt mismatch!" & return after tTest1
+  end if
+
+  if the length of tExtractedHash is 64 then
+    put "✓ Hash length is 64 hex chars" & return after tTest1
+  else
+    put "✗ Hash length is " & the length of tExtractedHash & " (expected 64)" & return after tTest1
+  end if
+else
+  put "✗ Hash format is incorrect!" & return after tTest1
+end if
+
+put tTest1 & return after tOutput
+
+-- Test 2: Verify password
+put "Test 2: Verifying password..." & return into tTest2
+if verifyPassword("testpassword123", tHash) then
+  put "✓ Correct password verified successfully" & return after tTest2
+else
+  put "✗ Correct password verification failed!" & return after tTest2
+end if
+
+if not verifyPassword("wrongpassword", tHash) then
+  put "✓ Incorrect password rejected successfully" & return after tTest2
+else
+  put "✗ Incorrect password was accepted!" & return after tTest2
+end if
+
+put tTest2 & return after tOutput
+
+-- Test 3: Generate multiple hashes with same password and salt (should be identical)
+put "Test 3: Consistency check..." & return into tTest3
+put hashPassword("testpassword123", tSalt) into tHash2
+put hashPassword("testpassword123", tSalt) into tHash3
+
+if tHash is tHash2 and tHash2 is tHash3 then
+  put "✓ Multiple hashes with same input are identical" & return after tTest3
+else
+  put "✗ Hash inconsistency detected!" & return after tTest3
+  put "  Hash 1: " & tHash & return after tTest3
+  put "  Hash 2: " & tHash2 & return after tTest3
+  put "  Hash 3: " & tHash3 & return after tTest3
+end if
+
+put tTest3 & return after tOutput
+
+-- Test 4: Different salts produce different hashes
+put "Test 4: Salt uniqueness check..." & return into tTest4
+put generateSalt() into tSalt1
+put generateSalt() into tSalt2
+put hashPassword("testpassword123", tSalt1) into tHash1
+put hashPassword("testpassword123", tSalt2) into tHash2
+
+set the itemDelimiter to ":"
+put item 2 of tHash1 into tHashOnly1
+put item 2 of tHash2 into tHashOnly2
+
+if tHashOnly1 is not tHashOnly2 then
+  put "✓ Different salts produce different hashes" & return after tTest4
+else
+  put "✗ Different salts produced identical hashes!" & return after tTest4
+end if
+
+put tTest4 & return after tOutput
+
+-- Test 5: Bitwise helper functions
+put "Test 5: Bitwise operations..." & return into tTest5
+
+-- Test xorByte
+put xorByte(15, 7) into tXorResult
+if tXorResult is 8 then
+  put "✓ xorByte(15, 7) = 8" & return after tTest5
+else
+  put "✗ xorByte(15, 7) = " & tXorResult & " (expected 8)" & return after tTest5
+end if
+
+-- Test bitAnd
+put bitAnd(15, 7) into tAndResult
+if tAndResult is 7 then
+  put "✓ bitAnd(15, 7) = 7" & return after tTest5
+else
+  put "✗ bitAnd(15, 7) = " & tAndResult & " (expected 7)" & return after tTest5
+end if
+
+-- Test bitShift (right shift)
+put bitShift(20, 2) into tShiftResult
+if tShiftResult is 5 then
+  put "✓ bitShift(20, 2) = 5" & return after tTest5
+else
+  put "✗ bitShift(20, 2) = " & tShiftResult & " (expected 5)" & return after tTest5
+end if
+
+-- Test bitShift (left shift - negative)
+put bitShift(5, -2) into tShiftResult2
+if tShiftResult2 is 20 then
+  put "✓ bitShift(5, -2) = 20" & return after tTest5
+else
+  put "✗ bitShift(5, -2) = " & tShiftResult2 & " (expected 20)" & return after tTest5
+end if
+
+put tTest5 & return after tOutput
+
+-- Test 6: Known test vector (for Xojo comparison)
+put "Test 6: Known test vector for Xojo comparison..." & return into tTest6
+put "Use this to verify Xojo produces same hash:" & return after tTest6
+put "  Password: mypassword" & return after tTest6
+put "  Salt: testsalt12345678901234567890ab" & return after tTest6
+
+put hashPassword("mypassword", "testsalt12345678901234567890ab") into tTestVector
+set the itemDelimiter to ":"
+put item 2 of tTestVector into tTestVectorHash
+
+put "  API Hash: " & tTestVectorHash & return after tTest6
+put return after tTest6
+put "In Xojo, compute:" & return after tTest6
+put "  Dim pwd As New MemoryBlock(10)" & return after tTest6
+put "  pwd.StringValue(0, 10) = \"mypassword\"" & return after tTest6
+put "  Dim hash As MemoryBlock = Crypto.PBKDF2(\"testsalt12345678901234567890ab\", pwd, 1000, 32, Crypto.HashAlgorithms.SHA2_256)" & return after tTest6
+put "  Dim hashHex As String = EncodeHex(hash)" & return after tTest6
+put "  ' Compare hashHex with the API Hash above - they should match!" & return after tTest6
+
+put tTest6 & return after tOutput
+
+-- Output results
+put "Content-Type: text/plain" & return & return
+put tOutput
+
+?>

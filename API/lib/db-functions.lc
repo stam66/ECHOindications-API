@@ -224,22 +224,67 @@ end hexToBinary
 function xorByte pA, pB
   put 0 into tResult
   put 1 into tBit
-  
+
   repeat 8 times
     put pA mod 2 into tBitA
     put pB mod 2 into tBitB
-    
+
     if tBitA is not tBitB then
       put tResult + tBit into tResult
     end if
-    
+
     put pA div 2 into pA
     put pB div 2 into pB
     put tBit * 2 into tBit
   end repeat
-  
+
   return tResult
 end xorByte
+
+
+-- Manual bitwise AND implementation
+-- Parameters: pA, pB (Integers) - Values to AND
+-- Returns: Integer result of A AND B
+function bitAnd pA, pB
+  put 0 into tResult
+  put 1 into tBit
+
+  repeat 32 times  -- Support 32-bit integers
+    put pA mod 2 into tBitA
+    put pB mod 2 into tBitB
+
+    if tBitA is 1 and tBitB is 1 then
+      put tResult + tBit into tResult
+    end if
+
+    put pA div 2 into pA
+    put pB div 2 into pB
+    put tBit * 2 into tBit
+
+    -- Early exit if both values are 0
+    if pA is 0 and pB is 0 then
+      exit repeat
+    end if
+  end repeat
+
+  return tResult
+end bitAnd
+
+
+-- Manual right bit shift implementation
+-- Parameters: pValue (Integer) - Value to shift, pShift (Integer) - Number of bits
+-- Returns: Integer result of pValue >> pShift
+function bitShift pValue, pShift
+  -- Negative shift means left shift
+  if pShift < 0 then
+    put pValue * (2 ^ (-pShift)) into tResult
+    return tResult
+  end if
+
+  -- Positive shift means right shift
+  put pValue div (2 ^ pShift) into tResult
+  return tResult
+end bitShift
 
 
 -- ============================================================================
@@ -291,59 +336,114 @@ function generateSalt
 end generateSalt
 
 
--- Hash password with salt using PBKDF2-like approach
+-- PBKDF2 implementation (RFC 2898) using HMAC-SHA256
+-- Parameters:
+--   pPassword (String) - Password to derive key from
+--   pSalt (String) - Cryptographic salt
+--   pIterations (Integer) - Number of iterations (default 1000)
+--   pDkLen (Integer) - Desired key length in bytes (default 32)
+-- Returns: Binary data of derived key
+-- Note: This matches Xojo's Crypto.PBKDF2 with SHA2_256
+function pbkdf2 pPassword, pSalt, pIterations, pDkLen
+  -- Default parameters
+  if pIterations is empty then put 1000 into pIterations
+  if pDkLen is empty then put 32 into pDkLen
+
+  put 32 into tHLen  -- SHA-256 output is 32 bytes
+
+  -- Calculate number of blocks needed: l = CEIL(dkLen / hLen)
+  put ceiling(pDkLen / tHLen) into tNumBlocks
+
+  put empty into tDerivedKey
+
+  -- For each block
+  repeat with tBlockIndex = 1 to tNumBlocks
+    -- INT_32_BE(i) - Convert block index to 4-byte big-endian
+    put numToChar((tBlockIndex bitShift 24) bitAnd 255) into tBlockBytes
+    put numToChar((tBlockIndex bitShift 16) bitAnd 255) after tBlockBytes
+    put numToChar((tBlockIndex bitShift 8) bitAnd 255) after tBlockBytes
+    put numToChar(tBlockIndex bitAnd 255) after tBlockBytes
+
+    -- U_1 = PRF(Password, Salt || INT(i))
+    put hmacSHA256(pSalt & tBlockBytes, pPassword) into tU
+    put hexToBinary(tU) into tUBinary
+    put tUBinary into tF  -- F starts as U_1
+
+    -- U_2 through U_c
+    repeat with j = 2 to pIterations
+      put hmacSHA256(tUBinary, pPassword) into tU
+      put hexToBinary(tU) into tUBinary
+
+      -- XOR with F: F = F XOR U_j
+      put empty into tNewF
+      repeat with k = 1 to the length of tF
+        put charToNum(char k of tF) into tByte1
+        put charToNum(char k of tUBinary) into tByte2
+        put numToChar(xorByte(tByte1, tByte2)) after tNewF
+      end repeat
+      put tNewF into tF
+    end repeat
+
+    -- Append this block to derived key
+    put tF after tDerivedKey
+  end repeat
+
+  -- Extract first dkLen bytes
+  return char 1 to pDkLen of tDerivedKey
+end pbkdf2
+
+
+-- Hash password with salt using PBKDF2 (RFC 2898) with HMAC-SHA256
 -- Parameters:
 --   pPassword (String) - Plain text password
 --   pSalt (String) - Salt value (32 chars recommended)
 -- Returns: "salt:hash" format string (hash is hex)
+-- Compatible with Xojo's Crypto.PBKDF2(salt, password, 1000, 32, SHA2_256)
 function hashPassword pPassword, pSalt
   put getPasswordIterations() into tIterations
-  put pPassword into tHash
-  
-  repeat tIterations times
-    put pSalt & tHash into tData
-    put messageDigest(tData, "SHA-256") into tBinary
-    -- Convert binary to hex for consistent storage
-    put binaryToHex(tBinary) into tHash
-  end repeat
-  
+
+  -- Use proper PBKDF2 implementation
+  put pbkdf2(pPassword, pSalt, tIterations, 32) into tBinary
+
+  -- Convert binary to hex for storage
+  put binaryToHex(tBinary) into tHash
+
   return pSalt & ":" & tHash
 end hashPassword
 
 
--- Verify password against stored hash
+-- Verify password against stored hash using PBKDF2
 -- Parameters:
 --   pPassword (String) - Plain text password to verify
 --   pStoredHash (String) - Stored hash in "salt:hash" format
 -- Returns: true/false
+-- Compatible with Xojo's Crypto.PBKDF2(salt, password, 1000, 32, SHA2_256)
 function verifyPassword pPassword, pStoredHash
-  -- Check if hash contains salt (new format: "salt:hash")
-  if ":" is in pStoredHash then
-    -- New format with salt
-    set the itemDelimiter to ":"
-    put item 1 of pStoredHash into tSalt
-    put item 2 of pStoredHash into tStoredHashValue
-
-    -- Hash the provided password with the stored salt
-    put hashPassword(pPassword, tSalt) into tNewHash
-    set the itemDelimiter to ":"
-    put item 2 of tNewHash into tNewHashValue
-
-    -- Compare hashes using constant-time comparison to prevent timing attacks
-    return constantTimeCompare(toLower(tNewHashValue), toLower(tStoredHashValue))
-  else
-    -- Old format without salt - direct hash comparison
-    put messageDigest(pPassword, "SHA-256") into tBinary
-    put binaryToHex(tBinary) into tPlainHash
-    -- Compare using constant-time comparison to prevent timing attacks
-    return constantTimeCompare(toLower(tPlainHash), toLower(pStoredHash))
+  -- PBKDF2 format must be "salt:hash"
+  if ":" is not in pStoredHash then
+    -- Invalid format
+    return false
   end if
+
+  -- Extract salt and hash
+  set the itemDelimiter to ":"
+  put item 1 of pStoredHash into tSalt
+  put item 2 of pStoredHash into tStoredHashValue
+
+  -- Hash the provided password with the stored salt using PBKDF2
+  put hashPassword(pPassword, tSalt) into tNewHash
+  set the itemDelimiter to ":"
+  put item 2 of tNewHash into tNewHashValue
+
+  -- Compare hashes using constant-time comparison to prevent timing attacks
+  return constantTimeCompare(toLower(tNewHashValue), toLower(tStoredHashValue))
 end verifyPassword
 
 
 -- Check if password hash needs migration to new format
 -- Parameters: pHash (String) - Stored password hash
 -- Returns: true if needs migration, false if already new format
+-- Legacy formats (MD5, SHA-1, SHA-256, plain text) all need migration
 function needsPasswordMigration pHash
   return (":" is not in pHash)
 end needsPasswordMigration
