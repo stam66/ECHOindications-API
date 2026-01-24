@@ -224,22 +224,67 @@ end hexToBinary
 function xorByte pA, pB
   put 0 into tResult
   put 1 into tBit
-  
+
   repeat 8 times
     put pA mod 2 into tBitA
     put pB mod 2 into tBitB
-    
+
     if tBitA is not tBitB then
       put tResult + tBit into tResult
     end if
-    
+
     put pA div 2 into pA
     put pB div 2 into pB
     put tBit * 2 into tBit
   end repeat
-  
+
   return tResult
 end xorByte
+
+
+-- Manual bitwise AND implementation
+-- Parameters: pA, pB (Integers) - Values to AND
+-- Returns: Integer result of A AND B
+function bitAnd pA, pB
+  put 0 into tResult
+  put 1 into tBit
+
+  repeat 32 times  -- Support 32-bit integers
+    put pA mod 2 into tBitA
+    put pB mod 2 into tBitB
+
+    if tBitA is 1 and tBitB is 1 then
+      put tResult + tBit into tResult
+    end if
+
+    put pA div 2 into pA
+    put pB div 2 into pB
+    put tBit * 2 into tBit
+
+    -- Early exit if both values are 0
+    if pA is 0 and pB is 0 then
+      exit repeat
+    end if
+  end repeat
+
+  return tResult
+end bitAnd
+
+
+-- Manual right bit shift implementation
+-- Parameters: pValue (Integer) - Value to shift, pShift (Integer) - Number of bits
+-- Returns: Integer result of pValue >> pShift
+function bitShift pValue, pShift
+  -- Negative shift means left shift
+  if pShift < 0 then
+    put pValue * (2 ^ (-pShift)) into tResult
+    return tResult
+  end if
+
+  -- Positive shift means right shift
+  put pValue div (2 ^ pShift) into tResult
+  return tResult
+end bitShift
 
 
 -- ============================================================================
