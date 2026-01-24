@@ -101,26 +101,20 @@ function handleLogin pPostData
     revCloseDatabase tConnectionID
     return jsonError("Invalid username or password")
   end if
-  
-  -- AUTO-MIGRATION: If using old password format, upgrade to salted hash
-  if tSalt is empty then
-    -- Generate new salt (32 random hex chars)
-    put generateSalt() into tNewSalt
-    
-    -- Hash password with new salt
-    put hashPassword(tPassword, tNewSalt) into tNewHash
-    
-    -- Update database with new salted password
-    put sqlEscape(tNewHash) into tSafeHash
-    put sqlEscape(tNewSalt) into tSafeSalt
-    put "UPDATE users SET password_hash = '" & tSafeHash & "', password_salt = '" & tSafeSalt & "'" into tUpdateSQL
-    put " WHERE id = " & tUserData[1] after tUpdateSQL
-    
-    revExecuteSQL tConnectionID, tUpdateSQL
-    
-    -- Note: Migration happens silently - user doesn't need to know
-  end if
-  
+
+  -- AUTO-MIGRATION DISABLED: Maintains compatibility with Xojo web app
+  -- The web app uses MySQL SHA2(password, 256) hashing and doesn't understand
+  -- the PBKDF2 format. If we migrate passwords to PBKDF2, users won't be able
+  -- to log into the web app anymore.
+  --
+  -- For new users created through the API, use PBKDF2:
+  -- 1. Generate salt: put generateSalt() into tSalt
+  -- 2. Hash password: put hashPassword(password, tSalt) into tHash
+  -- 3. Store both password_hash and password_salt columns
+  --
+  -- Existing users with SHA-256 hashes from the web app will continue to work
+  -- through the legacy SHA-256 verification path.
+
   -- Generate JWT token
   put generateJWT(tUserData[1], tUserData[2], tUserData[5]) into tToken
 
