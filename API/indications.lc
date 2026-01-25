@@ -262,29 +262,48 @@ function handleCreateIndication pConnectionID, pPostData, pUsername
   put tData["urgency"] into tUrgency
   put tData["contexts"] into tContexts
 
-  -- Set default values for boolean fields (0 if not provided)
-  if tPrimaryCare is empty then put 0 into tPrimaryCare
-  if tSecondaryInpatient is empty then put 0 into tSecondaryInpatient
-  if tSecondaryOutpatient is empty then put 0 into tSecondaryOutpatient
-  if tSourceASE is empty then put 0 into tSourceASE
-  if tSourceEACVI is empty then put 0 into tSourceEACVI
-  if tSourceBSE is empty then put 0 into tSourceBSE
-  if tSourceConsensus is empty then put 0 into tSourceConsensus
-
   -- Escape string values for SQL
   put sqlEscape(tTitle) into tSafeTitle
   put sqlEscape(tKeywords) into tSafeKeywords
   put sqlEscape(tComments) into tSafeComments
   put sqlEscape(tUrgency) into tSafeUrgency
 
-  -- Sanitize boolean values (ensure 0 or 1)
-  if tPrimaryCare is not 0 and tPrimaryCare is not 1 then put 0 into tPrimaryCare
-  if tSecondaryInpatient is not 0 and tSecondaryInpatient is not 1 then put 0 into tSecondaryInpatient
-  if tSecondaryOutpatient is not 0 and tSecondaryOutpatient is not 1 then put 0 into tSecondaryOutpatient
-  if tSourceASE is not 0 and tSourceASE is not 1 then put 0 into tSourceASE
-  if tSourceEACVI is not 0 and tSourceEACVI is not 1 then put 0 into tSourceEACVI
-  if tSourceBSE is not 0 and tSourceBSE is not 1 then put 0 into tSourceBSE
-  if tSourceConsensus is not 0 and tSourceConsensus is not 1 then put 0 into tSourceConsensus
+  -- Convert boolean fields to integers (handles strings, booleans, empty values)
+  if tPrimaryCare is true or tPrimaryCare = 1 or tPrimaryCare = "1" then
+    put 1 into tPrimaryCare
+  else
+    put 0 into tPrimaryCare
+  end if
+  if tSecondaryInpatient is true or tSecondaryInpatient = 1 or tSecondaryInpatient = "1" then
+    put 1 into tSecondaryInpatient
+  else
+    put 0 into tSecondaryInpatient
+  end if
+  if tSecondaryOutpatient is true or tSecondaryOutpatient = 1 or tSecondaryOutpatient = "1" then
+    put 1 into tSecondaryOutpatient
+  else
+    put 0 into tSecondaryOutpatient
+  end if
+  if tSourceASE is true or tSourceASE = 1 or tSourceASE = "1" then
+    put 1 into tSourceASE
+  else
+    put 0 into tSourceASE
+  end if
+  if tSourceEACVI is true or tSourceEACVI = 1 or tSourceEACVI = "1" then
+    put 1 into tSourceEACVI
+  else
+    put 0 into tSourceEACVI
+  end if
+  if tSourceBSE is true or tSourceBSE = 1 or tSourceBSE = "1" then
+    put 1 into tSourceBSE
+  else
+    put 0 into tSourceBSE
+  end if
+  if tSourceConsensus is true or tSourceConsensus = 1 or tSourceConsensus = "1" then
+    put 1 into tSourceConsensus
+  else
+    put 0 into tSourceConsensus
+  end if
 
   -- Build INSERT query
   put "INSERT INTO indications (title, keywords, comments, primary_care, secondary_inpatient," into tSQL
@@ -387,29 +406,48 @@ function handleUpdateIndication pConnectionID, pPostData, pUsername
     return jsonError("Title is required")
   end if
 
-  -- Set default values for boolean fields (0 if not provided)
-  if tPrimaryCare is empty then put 0 into tPrimaryCare
-  if tSecondaryInpatient is empty then put 0 into tSecondaryInpatient
-  if tSecondaryOutpatient is empty then put 0 into tSecondaryOutpatient
-  if tSourceASE is empty then put 0 into tSourceASE
-  if tSourceEACVI is empty then put 0 into tSourceEACVI
-  if tSourceBSE is empty then put 0 into tSourceBSE
-  if tSourceConsensus is empty then put 0 into tSourceConsensus
-
   -- Escape string values for SQL
   put sqlEscape(tTitle) into tSafeTitle
   put sqlEscape(tKeywords) into tSafeKeywords
   put sqlEscape(tComments) into tSafeComments
   put sqlEscape(tUrgency) into tSafeUrgency
 
-  -- Sanitize boolean values (ensure 0 or 1)
-  if tPrimaryCare is not 0 and tPrimaryCare is not 1 then put 0 into tPrimaryCare
-  if tSecondaryInpatient is not 0 and tSecondaryInpatient is not 1 then put 0 into tSecondaryInpatient
-  if tSecondaryOutpatient is not 0 and tSecondaryOutpatient is not 1 then put 0 into tSecondaryOutpatient
-  if tSourceASE is not 0 and tSourceASE is not 1 then put 0 into tSourceASE
-  if tSourceEACVI is not 0 and tSourceEACVI is not 1 then put 0 into tSourceEACVI
-  if tSourceBSE is not 0 and tSourceBSE is not 1 then put 0 into tSourceBSE
-  if tSourceConsensus is not 0 and tSourceConsensus is not 1 then put 0 into tSourceConsensus
+  -- Convert boolean fields to integers (handles strings, booleans, empty values)
+  if tPrimaryCare is true or tPrimaryCare = 1 or tPrimaryCare = "1" then
+    put 1 into tPrimaryCare
+  else
+    put 0 into tPrimaryCare
+  end if
+  if tSecondaryInpatient is true or tSecondaryInpatient = 1 or tSecondaryInpatient = "1" then
+    put 1 into tSecondaryInpatient
+  else
+    put 0 into tSecondaryInpatient
+  end if
+  if tSecondaryOutpatient is true or tSecondaryOutpatient = 1 or tSecondaryOutpatient = "1" then
+    put 1 into tSecondaryOutpatient
+  else
+    put 0 into tSecondaryOutpatient
+  end if
+  if tSourceASE is true or tSourceASE = 1 or tSourceASE = "1" then
+    put 1 into tSourceASE
+  else
+    put 0 into tSourceASE
+  end if
+  if tSourceEACVI is true or tSourceEACVI = 1 or tSourceEACVI = "1" then
+    put 1 into tSourceEACVI
+  else
+    put 0 into tSourceEACVI
+  end if
+  if tSourceBSE is true or tSourceBSE = 1 or tSourceBSE = "1" then
+    put 1 into tSourceBSE
+  else
+    put 0 into tSourceBSE
+  end if
+  if tSourceConsensus is true or tSourceConsensus = 1 or tSourceConsensus = "1" then
+    put 1 into tSourceConsensus
+  else
+    put 0 into tSourceConsensus
+  end if
 
   -- Build UPDATE query
   put "UPDATE indications SET" into tSQL
