@@ -2,7 +2,7 @@
 -- ============================================================================
 -- DATABASE HELPER FUNCTIONS for LiveCode Server API
 -- ============================================================================
--- Version: 2.1 - Fixed HMAC with Manual XOR (No bitXor dependency)
+-- Version: 2.2 - Optimized with native bitXor for improved performance
 -- Includes: Database, JSON, Security, Passwords, JWT
 -- Dependencies: photon-library.lc, settings.lc
 -- ============================================================================
@@ -155,6 +155,8 @@ end validateNumericID
 -- ============================================================================
 -- BITWISE HELPER FUNCTIONS
 -- ============================================================================
+-- Note: Uses native bitXor for XOR operations (significant performance gain)
+-- The bitAnd and bitShift helpers are retained for potential compatibility
 
 -- Convert binary hash to hexadecimal string
 -- Parameters: pBinary (String) - Binary data
@@ -216,30 +218,6 @@ function hexToBinary pHex
   end repeat
   return tBinary
 end hexToBinary
-
-
--- Manual XOR implementation (bitwise exclusive OR)
--- Parameters: pA, pB (Integers 0-255) - Bytes to XOR
--- Returns: Integer result of A XOR B
-function xorByte pA, pB
-  put 0 into tResult
-  put 1 into tBit
-
-  repeat 8 times
-    put pA mod 2 into tBitA
-    put pB mod 2 into tBitB
-
-    if tBitA is not tBitB then
-      put tResult + tBit into tResult
-    end if
-
-    put pA div 2 into pA
-    put pB div 2 into pB
-    put tBit * 2 into tBit
-  end repeat
-
-  return tResult
-end xorByte
 
 
 -- Manual bitwise AND implementation
@@ -377,12 +355,12 @@ function pbkdf2 pPassword, pSalt, pIterations, pDkLen
       put hmacSHA256(tUBinary, pPassword) into tU
       put hexToBinary(tU) into tUBinary
 
-      -- XOR with F: F = F XOR U_j
+      -- XOR with F: F = F XOR U_j (using native bitXor for performance)
       put empty into tNewF
       repeat with k = 1 to the length of tF
         put charToNum(char k of tF) into tByte1
         put charToNum(char k of tUBinary) into tByte2
-        put numToChar(xorByte(tByte1, tByte2)) after tNewF
+        put numToChar(bitXor(tByte1, tByte2)) after tNewF
       end repeat
       put tNewF into tF
     end repeat
@@ -755,7 +733,7 @@ function createSignature pData, pSecret
 end createSignature
 
 
--- HMAC-SHA256 implementation for LiveCode (with manual XOR)
+-- HMAC-SHA256 implementation for LiveCode (using native bitXor)
 -- Parameters:
 --   pMessage (String) - Message to hash
 --   pKey (String) - Secret key
@@ -777,14 +755,14 @@ function hmacSHA256 pMessage, pKey
     end repeat
   end if
   
-  -- Create inner and outer padding using manual XOR
+  -- Create inner and outer padding using native bitXor (significant performance gain)
   put empty into tInnerPad
   put empty into tOuterPad
-  
+
   repeat with i = 1 to tBlockSize
     put charToNum(char i of pKey) into tKeyByte
-    put numToChar(xorByte(tKeyByte, 54)) after tInnerPad  -- 0x36 = 54
-    put numToChar(xorByte(tKeyByte, 92)) after tOuterPad  -- 0x5C = 92
+    put numToChar(bitXor(tKeyByte, 54)) after tInnerPad  -- 0x36 = 54
+    put numToChar(bitXor(tKeyByte, 92)) after tOuterPad  -- 0x5C = 92
   end repeat
   
   -- Calculate inner hash (messageDigest returns binary)
