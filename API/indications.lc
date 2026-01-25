@@ -260,7 +260,11 @@ function handleCreateIndication pConnectionID, pPostData, pUsername
   put tData["source_bse"] into tSourceBSE
   put tData["source_consensus"] into tSourceConsensus
   put tData["urgency"] into tUrgency
+  -- Support both "contexts" and "context_ids" field names
   put tData["contexts"] into tContexts
+  if tContexts is empty or tContexts is not an array then
+    put tData["context_ids"] into tContexts
+  end if
 
   -- Escape string values for SQL
   put sqlEscape(tTitle) into tSafeTitle
@@ -332,8 +336,10 @@ function handleCreateIndication pConnectionID, pPostData, pUsername
 
   revExecuteSQL pConnectionID, tSQL
 
-  if the result is not empty then
-    return jsonError("Failed to create indication: " & the result)
+  -- revExecuteSQL returns affected row count on success, or error string on failure
+  put the result into tResult
+  if tResult begins with "revdberr" then
+    return jsonError("Failed to create indication: " & tResult)
   end if
 
   -- Get the newly created ID
@@ -415,7 +421,11 @@ function handleUpdateIndication pConnectionID, pPostData, pUsername
   put tData["source_bse"] into tSourceBSE
   put tData["source_consensus"] into tSourceConsensus
   put tData["urgency"] into tUrgency
+  -- Support both "contexts" and "context_ids" field names
   put tData["contexts"] into tContexts
+  if tContexts is empty or tContexts is not an array then
+    put tData["context_ids"] into tContexts
+  end if
 
   -- Validate required fields
   if tTitle is empty then
@@ -496,8 +506,10 @@ function handleUpdateIndication pConnectionID, pPostData, pUsername
 
   revExecuteSQL pConnectionID, tSQL
 
-  if the result is not empty then
-    return jsonError("Failed to update indication: " & the result)
+  -- revExecuteSQL returns affected row count on success, or error string on failure
+  put the result into tResult
+  if tResult begins with "revdberr" then
+    return jsonError("Failed to update indication: " & tResult)
   end if
 
   -- Delete existing context associations
