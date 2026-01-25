@@ -232,11 +232,240 @@ function handleReadIndication pConnectionID, pID
 end handleReadIndication
 
 function handleCreateIndication pConnectionID, pPostData, pUsername
-  return jsonError("Create indication not yet implemented - requires JSON parsing")
+  if pPostData is empty then
+    return jsonError("No data provided")
+  end if
+
+  -- Parse JSON
+  put JSONParser(pPostData) into tData
+
+  if tData is not an array then
+    return jsonError("Invalid JSON format")
+  end if
+
+  -- Extract and validate required fields
+  put tData["title"] into tTitle
+  if tTitle is empty then
+    return jsonError("Title is required")
+  end if
+
+  -- Extract optional fields with defaults
+  put tData["keywords"] into tKeywords
+  put tData["comments"] into tComments
+  put tData["primary_care"] into tPrimaryCare
+  put tData["secondary_inpatient"] into tSecondaryInpatient
+  put tData["secondary_outpatient"] into tSecondaryOutpatient
+  put tData["source_ase"] into tSourceASE
+  put tData["source_eacvi"] into tSourceEACVI
+  put tData["source_bse"] into tSourceBSE
+  put tData["source_consensus"] into tSourceConsensus
+  put tData["urgency"] into tUrgency
+  put tData["contexts"] into tContexts
+
+  -- Set default values for boolean fields (0 if not provided)
+  if tPrimaryCare is empty then put 0 into tPrimaryCare
+  if tSecondaryInpatient is empty then put 0 into tSecondaryInpatient
+  if tSecondaryOutpatient is empty then put 0 into tSecondaryOutpatient
+  if tSourceASE is empty then put 0 into tSourceASE
+  if tSourceEACVI is empty then put 0 into tSourceEACVI
+  if tSourceBSE is empty then put 0 into tSourceBSE
+  if tSourceConsensus is empty then put 0 into tSourceConsensus
+
+  -- Escape string values for SQL
+  put sqlEscape(tTitle) into tSafeTitle
+  put sqlEscape(tKeywords) into tSafeKeywords
+  put sqlEscape(tComments) into tSafeComments
+  put sqlEscape(tUrgency) into tSafeUrgency
+
+  -- Sanitize boolean values (ensure 0 or 1)
+  if tPrimaryCare is not 0 and tPrimaryCare is not 1 then put 0 into tPrimaryCare
+  if tSecondaryInpatient is not 0 and tSecondaryInpatient is not 1 then put 0 into tSecondaryInpatient
+  if tSecondaryOutpatient is not 0 and tSecondaryOutpatient is not 1 then put 0 into tSecondaryOutpatient
+  if tSourceASE is not 0 and tSourceASE is not 1 then put 0 into tSourceASE
+  if tSourceEACVI is not 0 and tSourceEACVI is not 1 then put 0 into tSourceEACVI
+  if tSourceBSE is not 0 and tSourceBSE is not 1 then put 0 into tSourceBSE
+  if tSourceConsensus is not 0 and tSourceConsensus is not 1 then put 0 into tSourceConsensus
+
+  -- Build INSERT query
+  put "INSERT INTO indications (title, keywords, comments, primary_care, secondary_inpatient," into tSQL
+  put " secondary_outpatient, source_ase, source_eacvi, source_bse, source_consensus, urgency," after tSQL
+  put " created_at, updated_at) VALUES ('" after tSQL
+  put tSafeTitle & "', '" & tSafeKeywords & "', '" & tSafeComments & "', " after tSQL
+  put tPrimaryCare & ", " & tSecondaryInpatient & ", " & tSecondaryOutpatient & ", " after tSQL
+  put tSourceASE & ", " & tSourceEACVI & ", " & tSourceBSE & ", " & tSourceConsensus & ", '" after tSQL
+  put tSafeUrgency & "', NOW(), NOW())" after tSQL
+
+  revExecuteSQL pConnectionID, tSQL
+
+  if the result is not empty then
+    return jsonError("Failed to create indication: " & the result)
+  end if
+
+  -- Get the newly created ID
+  put revDataFromQuery(tab, return, pConnectionID, "SELECT LAST_INSERT_ID()") into tNewID
+  put line 1 of tNewID into tNewID
+
+  -- Insert context associations if provided
+  if tContexts is an array then
+    repeat for each element tContext in tContexts
+      -- Handle both {id: X} objects and plain ID numbers
+      if tContext is an array then
+        put tContext["id"] into tContextID
+      else
+        put tContext into tContextID
+      end if
+
+      if validateNumericID(tContextID) is not empty then
+        put "INSERT INTO indication_contexts (indication_id, context_id) VALUES (" & tNewID & ", " & tContextID & ")" into tCtxSQL
+        revExecuteSQL pConnectionID, tCtxSQL
+      end if
+    end repeat
+  end if
+
+  -- Log to audit table
+  if pUsername is empty then
+    put "system" into pUsername
+  end if
+  put sqlEscape(pUsername) into tSafeUser
+  put "INSERT INTO audit (audit_user, audit_table, audit_primarykey, action, old_values)" into tAuditSQL
+  put " VALUES ('" & tSafeUser & "', 'indications', " & tNewID & ", 'create', NULL)" after tAuditSQL
+  revExecuteSQL pConnectionID, tAuditSQL
+
+  -- Return the newly created indication
+  return handleReadIndication(pConnectionID, tNewID)
 end handleCreateIndication
 
 function handleUpdateIndication pConnectionID, pPostData, pUsername
-  return jsonError("Update indication not yet implemented")
+  if pPostData is empty then
+    return jsonError("No data provided")
+  end if
+
+  -- Parse JSON
+  put JSONParser(pPostData) into tData
+
+  if tData is not an array then
+    return jsonError("Invalid JSON format")
+  end if
+
+  -- Extract and validate ID
+  put tData["id"] into tID
+  if tID is empty then
+    return jsonError("Indication ID is required")
+  end if
+
+  if validateNumericID(tID) is empty then
+    return jsonError("Invalid indication ID")
+  end if
+
+  put tID into tSafeID
+
+  -- Get old data for audit log before updating
+  put handleReadIndication(pConnectionID, tSafeID) into tOldDataJSON
+
+  -- Check if indication exists
+  put JSONParser(tOldDataJSON) into tOldData
+  if tOldData["status"] is "error" then
+    return jsonError("Indication not found")
+  end if
+
+  -- Extract fields from request
+  put tData["title"] into tTitle
+  put tData["keywords"] into tKeywords
+  put tData["comments"] into tComments
+  put tData["primary_care"] into tPrimaryCare
+  put tData["secondary_inpatient"] into tSecondaryInpatient
+  put tData["secondary_outpatient"] into tSecondaryOutpatient
+  put tData["source_ase"] into tSourceASE
+  put tData["source_eacvi"] into tSourceEACVI
+  put tData["source_bse"] into tSourceBSE
+  put tData["source_consensus"] into tSourceConsensus
+  put tData["urgency"] into tUrgency
+  put tData["contexts"] into tContexts
+
+  -- Validate required fields
+  if tTitle is empty then
+    return jsonError("Title is required")
+  end if
+
+  -- Set default values for boolean fields (0 if not provided)
+  if tPrimaryCare is empty then put 0 into tPrimaryCare
+  if tSecondaryInpatient is empty then put 0 into tSecondaryInpatient
+  if tSecondaryOutpatient is empty then put 0 into tSecondaryOutpatient
+  if tSourceASE is empty then put 0 into tSourceASE
+  if tSourceEACVI is empty then put 0 into tSourceEACVI
+  if tSourceBSE is empty then put 0 into tSourceBSE
+  if tSourceConsensus is empty then put 0 into tSourceConsensus
+
+  -- Escape string values for SQL
+  put sqlEscape(tTitle) into tSafeTitle
+  put sqlEscape(tKeywords) into tSafeKeywords
+  put sqlEscape(tComments) into tSafeComments
+  put sqlEscape(tUrgency) into tSafeUrgency
+
+  -- Sanitize boolean values (ensure 0 or 1)
+  if tPrimaryCare is not 0 and tPrimaryCare is not 1 then put 0 into tPrimaryCare
+  if tSecondaryInpatient is not 0 and tSecondaryInpatient is not 1 then put 0 into tSecondaryInpatient
+  if tSecondaryOutpatient is not 0 and tSecondaryOutpatient is not 1 then put 0 into tSecondaryOutpatient
+  if tSourceASE is not 0 and tSourceASE is not 1 then put 0 into tSourceASE
+  if tSourceEACVI is not 0 and tSourceEACVI is not 1 then put 0 into tSourceEACVI
+  if tSourceBSE is not 0 and tSourceBSE is not 1 then put 0 into tSourceBSE
+  if tSourceConsensus is not 0 and tSourceConsensus is not 1 then put 0 into tSourceConsensus
+
+  -- Build UPDATE query
+  put "UPDATE indications SET" into tSQL
+  put " title = '" & tSafeTitle & "'," after tSQL
+  put " keywords = '" & tSafeKeywords & "'," after tSQL
+  put " comments = '" & tSafeComments & "'," after tSQL
+  put " primary_care = " & tPrimaryCare & "," after tSQL
+  put " secondary_inpatient = " & tSecondaryInpatient & "," after tSQL
+  put " secondary_outpatient = " & tSecondaryOutpatient & "," after tSQL
+  put " source_ase = " & tSourceASE & "," after tSQL
+  put " source_eacvi = " & tSourceEACVI & "," after tSQL
+  put " source_bse = " & tSourceBSE & "," after tSQL
+  put " source_consensus = " & tSourceConsensus & "," after tSQL
+  put " urgency = '" & tSafeUrgency & "'," after tSQL
+  put " updated_at = NOW()" after tSQL
+  put " WHERE id = " & tSafeID after tSQL
+
+  revExecuteSQL pConnectionID, tSQL
+
+  if the result is not empty then
+    return jsonError("Failed to update indication: " & the result)
+  end if
+
+  -- Delete existing context associations
+  put "DELETE FROM indication_contexts WHERE indication_id = " & tSafeID into tDelCtxSQL
+  revExecuteSQL pConnectionID, tDelCtxSQL
+
+  -- Insert new context associations if provided
+  if tContexts is an array then
+    repeat for each element tContext in tContexts
+      -- Handle both {id: X} objects and plain ID numbers
+      if tContext is an array then
+        put tContext["id"] into tContextID
+      else
+        put tContext into tContextID
+      end if
+
+      if validateNumericID(tContextID) is not empty then
+        put "INSERT INTO indication_contexts (indication_id, context_id) VALUES (" & tSafeID & ", " & tContextID & ")" into tCtxSQL
+        revExecuteSQL pConnectionID, tCtxSQL
+      end if
+    end repeat
+  end if
+
+  -- Log to audit table
+  if pUsername is empty then
+    put "system" into pUsername
+  end if
+  put sqlEscape(pUsername) into tSafeUser
+  put sqlEscape(tOldDataJSON) into tSafeOldJSON
+  put "INSERT INTO audit (audit_user, audit_table, audit_primarykey, action, old_values)" into tAuditSQL
+  put " VALUES ('" & tSafeUser & "', 'indications', " & tSafeID & ", 'update', '" & tSafeOldJSON & "')" after tAuditSQL
+  revExecuteSQL pConnectionID, tAuditSQL
+
+  -- Return the updated indication
+  return handleReadIndication(pConnectionID, tSafeID)
 end handleUpdateIndication
 
 function handleDeleteIndication pConnectionID, pID, pUsername
