@@ -61,93 +61,51 @@ function handleLogin pPostData
     put header "Status: 429 Too Many Requests"
     return jsonError(tRateLimitError)
   end if
-  
+
   -- Get user from database
   put "SELECT id, username, password_hash, email, name, password_salt, is_active FROM users WHERE username = '" & sqlEscape(tUsername) & "'" into tSQL
   put revDataFromQuery(tab, return, tConnectionID, tSQL) into tUserData
-  
+
   if tUserData begins with "revdberr" or tUserData is empty then
     revCloseDatabase tConnectionID
     return jsonError("Invalid username or password")
   end if
-  
+
   split tUserData by tab
-  
+
   -- Check if user is active
   if tUserData[7] is not 1 then
     revCloseDatabase tConnectionID
     return jsonError("User account is inactive")
   end if
-  
+
   -- Verify password
   put tUserData[3] into tStoredHash      -- Column 3 is password_hash
   put tUserData[6] into tSalt            -- Column 6 is password_salt
-
-  -- DEBUG LOGGING
-  put "=== AUTH DEBUG ===" & return into tDebugLog
-  put "Username: " & tUsername & return after tDebugLog
-  put "Salt length: " & the length of tSalt & return after tDebugLog
-  put "Salt value: " & tSalt & return after tDebugLog
-  put "Hash length: " & the length of tStoredHash & return after tDebugLog
-  put "Hash value (first 20 chars): " & char 1 to 20 of tStoredHash & return after tDebugLog
-  put "Password length: " & the length of tPassword & return after tDebugLog
 
   -- Determine the full hash format:
   -- If password_hash already contains ":", it includes the salt, use as-is
   -- Otherwise, construct "salt:hash" if salt exists
   if ":" is in tStoredHash then
-    -- Hash already in "salt:hash" format (or broken ":hash" format)
+    -- Hash already in "salt:hash" format
     put tStoredHash into tFullHash
-    put "Format: salt:hash embedded" & return after tDebugLog
   else if tSalt is not empty then
     -- Separate salt column - construct "salt:hash"
     put tSalt & ":" & tStoredHash into tFullHash
-    put "Format: separate salt column (PBKDF2)" & return after tDebugLog
   else
     -- Old format - plain hash with no salt
     put tStoredHash into tFullHash
-    put "Format: legacy (no salt)" & return after tDebugLog
   end if
 
-  put "Full hash format length: " & the length of tFullHash & return after tDebugLog
-  put "==================" & return after tDebugLog
-
-  -- Log to server error log
-  write tDebugLog to stderr
-
   if not verifyPassword(tPassword, tFullHash) then
-    -- Additional debug on failure
-    write ("LOGIN FAILED for user: " & tUsername & return) to stderr
-    write ("Attempting manual hash computation..." & return) to stderr
-
-    -- Try to compute the hash manually to see what we get
-    put hashPassword(tPassword, tSalt) into tComputedFullHash
-    set the itemDelimiter to ":"
-    put item 2 of tComputedFullHash into tComputedHashValue
-
-    write ("Computed hash (first 20): " & char 1 to 20 of tComputedHashValue & return) to stderr
-    write ("Stored hash (first 20): " & char 1 to 20 of tStoredHash & return) to stderr
-    write ("Hashes match: " & (toLower(tComputedHashValue) = toLower(tStoredHash)) & return) to stderr
-
     revCloseDatabase tConnectionID
-
-    -- TEMPORARY DEBUG: Include diagnostic info in error response
-    put "Salt length: " & the length of tSalt into tDebugInfo["salt_len"]
-    put "Hash length: " & the length of tStoredHash into tDebugInfo["hash_len"]
-    put "Full hash length: " & the length of tFullHash into tDebugInfo["full_hash_len"]
-    put char 1 to 10 of tSalt into tDebugInfo["salt_preview"]
-    put char 1 to 10 of tStoredHash into tDebugInfo["hash_preview"]
-    put (":" is in tStoredHash) into tDebugInfo["hash_has_colon"]
-    put tDebugInfo into tErrorResult["debug"]
-    put "Invalid username or password" into tErrorResult["message"]
-    put "error" into tErrorResult["status"]
-    return JSONStringify(tErrorResult)
+    return jsonError("Invalid username or password")
   end if
 
   -- Password verified with PBKDF2
   -- Both API and Xojo web app use compatible PBKDF2 implementations
   -- API: pbkdf2() function with HMAC-SHA256
-  -- Xojo: Crypto.PBKDF2(salt, password, 1000, 32, SHA2_256)
+  -- Xojo: Crypto.PBKDF2(salt, password, 10000, 32, SHA2_256)
 
   -- Generate JWT token
   put generateJWT(tUserData[1], tUserData[2], tUserData[5]) into tToken
@@ -175,20 +133,20 @@ end handleLogin
 function handleRefresh
   -- Require authentication (will verify current token)
   put requireAuth() into tPayload
-  
+
   -- If we got here, token is valid - generate new token
   put generateJWT(tPayload["user_id"], tPayload["username"], tPayload["name"]) into tNewToken
-  
+
   if tNewToken begins with "ERROR:" then
     return jsonError("Failed to refresh token")
   end if
-  
+
   -- Return new token with user info
   put tNewToken into tResult["token"]
   put tPayload["user_id"] into tResult["user"]["id"]
   put tPayload["username"] into tResult["user"]["username"]
   put tPayload["name"] into tResult["user"]["name"]
-  
+
   return jsonSuccess(tResult)
 end handleRefresh
 ?>
