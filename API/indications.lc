@@ -268,22 +268,32 @@ function handleCreateIndication pConnectionID, pPostData, pUsername
   put sqlEscape(tComments) into tSafeComments
   put sqlEscape(tUrgency) into tSafeUrgency
 
-  -- Convert boolean fields to integers (handles strings, booleans, empty values)
-  if tPrimaryCare is true or tPrimaryCare = 1 or tPrimaryCare = "1" then
-    put 1 into tPrimaryCare
+  -- Convert care setting fields to ENUM values ('indicated', 'not_indicated', 'can_be_considered')
+  -- Accept: true/1/"1"/"indicated" -> "indicated", false/0/"0"/"not_indicated" -> "not_indicated"
+  -- Also accept "can_be_considered" directly
+  if tPrimaryCare = "can_be_considered" then
+    put "can_be_considered" into tPrimaryCare
+  else if tPrimaryCare is true or tPrimaryCare = 1 or tPrimaryCare = "1" or tPrimaryCare = "indicated" then
+    put "indicated" into tPrimaryCare
   else
-    put 0 into tPrimaryCare
+    put "not_indicated" into tPrimaryCare
   end if
-  if tSecondaryInpatient is true or tSecondaryInpatient = 1 or tSecondaryInpatient = "1" then
-    put 1 into tSecondaryInpatient
+  if tSecondaryInpatient = "can_be_considered" then
+    put "can_be_considered" into tSecondaryInpatient
+  else if tSecondaryInpatient is true or tSecondaryInpatient = 1 or tSecondaryInpatient = "1" or tSecondaryInpatient = "indicated" then
+    put "indicated" into tSecondaryInpatient
   else
-    put 0 into tSecondaryInpatient
+    put "not_indicated" into tSecondaryInpatient
   end if
-  if tSecondaryOutpatient is true or tSecondaryOutpatient = 1 or tSecondaryOutpatient = "1" then
-    put 1 into tSecondaryOutpatient
+  if tSecondaryOutpatient = "can_be_considered" then
+    put "can_be_considered" into tSecondaryOutpatient
+  else if tSecondaryOutpatient is true or tSecondaryOutpatient = 1 or tSecondaryOutpatient = "1" or tSecondaryOutpatient = "indicated" then
+    put "indicated" into tSecondaryOutpatient
   else
-    put 0 into tSecondaryOutpatient
+    put "not_indicated" into tSecondaryOutpatient
   end if
+
+  -- Convert source fields to integers (these ARE tinyint columns)
   if tSourceASE is true or tSourceASE = 1 or tSourceASE = "1" then
     put 1 into tSourceASE
   else
@@ -305,12 +315,18 @@ function handleCreateIndication pConnectionID, pPostData, pUsername
     put 0 into tSourceConsensus
   end if
 
+  -- Validate urgency ENUM value
+  if tUrgency is not among the items of "urgent,soon,routine,can_be_considered,not_indicated" then
+    put "not_indicated" into tUrgency
+  end if
+  put sqlEscape(tUrgency) into tSafeUrgency
+
   -- Build INSERT query
   put "INSERT INTO indications (title, keywords, comments, primary_care, secondary_inpatient," into tSQL
   put " secondary_outpatient, source_ase, source_eacvi, source_bse, source_consensus, urgency," after tSQL
   put " created_at, updated_at) VALUES ('" after tSQL
-  put tSafeTitle & "', '" & tSafeKeywords & "', '" & tSafeComments & "', " after tSQL
-  put tPrimaryCare & ", " & tSecondaryInpatient & ", " & tSecondaryOutpatient & ", " after tSQL
+  put tSafeTitle & "', '" & tSafeKeywords & "', '" & tSafeComments & "', '" after tSQL
+  put tPrimaryCare & "', '" & tSecondaryInpatient & "', '" & tSecondaryOutpatient & "', " after tSQL
   put tSourceASE & ", " & tSourceEACVI & ", " & tSourceBSE & ", " & tSourceConsensus & ", '" after tSQL
   put tSafeUrgency & "', NOW(), NOW())" after tSQL
 
@@ -410,24 +426,31 @@ function handleUpdateIndication pConnectionID, pPostData, pUsername
   put sqlEscape(tTitle) into tSafeTitle
   put sqlEscape(tKeywords) into tSafeKeywords
   put sqlEscape(tComments) into tSafeComments
-  put sqlEscape(tUrgency) into tSafeUrgency
 
-  -- Convert boolean fields to integers (handles strings, booleans, empty values)
-  if tPrimaryCare is true or tPrimaryCare = 1 or tPrimaryCare = "1" then
-    put 1 into tPrimaryCare
+  -- Convert care setting fields to ENUM values ('indicated', 'not_indicated', 'can_be_considered')
+  if tPrimaryCare = "can_be_considered" then
+    put "can_be_considered" into tPrimaryCare
+  else if tPrimaryCare is true or tPrimaryCare = 1 or tPrimaryCare = "1" or tPrimaryCare = "indicated" then
+    put "indicated" into tPrimaryCare
   else
-    put 0 into tPrimaryCare
+    put "not_indicated" into tPrimaryCare
   end if
-  if tSecondaryInpatient is true or tSecondaryInpatient = 1 or tSecondaryInpatient = "1" then
-    put 1 into tSecondaryInpatient
+  if tSecondaryInpatient = "can_be_considered" then
+    put "can_be_considered" into tSecondaryInpatient
+  else if tSecondaryInpatient is true or tSecondaryInpatient = 1 or tSecondaryInpatient = "1" or tSecondaryInpatient = "indicated" then
+    put "indicated" into tSecondaryInpatient
   else
-    put 0 into tSecondaryInpatient
+    put "not_indicated" into tSecondaryInpatient
   end if
-  if tSecondaryOutpatient is true or tSecondaryOutpatient = 1 or tSecondaryOutpatient = "1" then
-    put 1 into tSecondaryOutpatient
+  if tSecondaryOutpatient = "can_be_considered" then
+    put "can_be_considered" into tSecondaryOutpatient
+  else if tSecondaryOutpatient is true or tSecondaryOutpatient = 1 or tSecondaryOutpatient = "1" or tSecondaryOutpatient = "indicated" then
+    put "indicated" into tSecondaryOutpatient
   else
-    put 0 into tSecondaryOutpatient
+    put "not_indicated" into tSecondaryOutpatient
   end if
+
+  -- Convert source fields to integers (these ARE tinyint columns)
   if tSourceASE is true or tSourceASE = 1 or tSourceASE = "1" then
     put 1 into tSourceASE
   else
@@ -449,14 +472,20 @@ function handleUpdateIndication pConnectionID, pPostData, pUsername
     put 0 into tSourceConsensus
   end if
 
+  -- Validate urgency ENUM value
+  if tUrgency is not among the items of "urgent,soon,routine,can_be_considered,not_indicated" then
+    put "not_indicated" into tUrgency
+  end if
+  put sqlEscape(tUrgency) into tSafeUrgency
+
   -- Build UPDATE query
   put "UPDATE indications SET" into tSQL
   put " title = '" & tSafeTitle & "'," after tSQL
   put " keywords = '" & tSafeKeywords & "'," after tSQL
   put " comments = '" & tSafeComments & "'," after tSQL
-  put " primary_care = " & tPrimaryCare & "," after tSQL
-  put " secondary_inpatient = " & tSecondaryInpatient & "," after tSQL
-  put " secondary_outpatient = " & tSecondaryOutpatient & "," after tSQL
+  put " primary_care = '" & tPrimaryCare & "'," after tSQL
+  put " secondary_inpatient = '" & tSecondaryInpatient & "'," after tSQL
+  put " secondary_outpatient = '" & tSecondaryOutpatient & "'," after tSQL
   put " source_ase = " & tSourceASE & "," after tSQL
   put " source_eacvi = " & tSourceEACVI & "," after tSQL
   put " source_bse = " & tSourceBSE & "," after tSQL
