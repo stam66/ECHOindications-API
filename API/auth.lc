@@ -82,22 +82,53 @@ function handleLogin pPostData
   -- Verify password
   put tUserData[3] into tStoredHash      -- Column 3 is password_hash
   put tUserData[6] into tSalt            -- Column 6 is password_salt
-  
+
+  -- DEBUG LOGGING
+  put "=== AUTH DEBUG ===" & return into tDebugLog
+  put "Username: " & tUsername & return after tDebugLog
+  put "Salt length: " & the length of tSalt & return after tDebugLog
+  put "Salt value: " & tSalt & return after tDebugLog
+  put "Hash length: " & the length of tStoredHash & return after tDebugLog
+  put "Hash value (first 20 chars): " & char 1 to 20 of tStoredHash & return after tDebugLog
+  put "Password length: " & the length of tPassword & return after tDebugLog
+
   -- Determine the full hash format:
   -- If password_hash already contains ":", it includes the salt, use as-is
   -- Otherwise, construct "salt:hash" if salt exists
   if ":" is in tStoredHash then
     -- Hash already in "salt:hash" format (or broken ":hash" format)
     put tStoredHash into tFullHash
+    put "Format: salt:hash embedded" & return after tDebugLog
   else if tSalt is not empty then
     -- Separate salt column - construct "salt:hash"
     put tSalt & ":" & tStoredHash into tFullHash
+    put "Format: separate salt column (PBKDF2)" & return after tDebugLog
   else
     -- Old format - plain hash with no salt
     put tStoredHash into tFullHash
+    put "Format: legacy (no salt)" & return after tDebugLog
   end if
-  
+
+  put "Full hash format length: " & the length of tFullHash & return after tDebugLog
+  put "==================" & return after tDebugLog
+
+  -- Log to server error log
+  write tDebugLog to stderr
+
   if not verifyPassword(tPassword, tFullHash) then
+    -- Additional debug on failure
+    put "LOGIN FAILED for user: " & tUsername & return to stderr
+    put "Attempting manual hash computation..." & return to stderr
+
+    -- Try to compute the hash manually to see what we get
+    put hashPassword(tPassword, tSalt) into tComputedFullHash
+    set the itemDelimiter to ":"
+    put item 2 of tComputedFullHash into tComputedHashValue
+
+    put "Computed hash (first 20): " & char 1 to 20 of tComputedHashValue & return to stderr
+    put "Stored hash (first 20): " & char 1 to 20 of tStoredHash & return to stderr
+    put "Hashes match: " & (toLower(tComputedHashValue) = toLower(tStoredHash)) & return to stderr
+
     revCloseDatabase tConnectionID
     return jsonError("Invalid username or password")
   end if

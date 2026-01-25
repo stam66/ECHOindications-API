@@ -361,10 +361,11 @@ function pbkdf2 pPassword, pSalt, pIterations, pDkLen
   -- For each block
   repeat with tBlockIndex = 1 to tNumBlocks
     -- INT_32_BE(i) - Convert block index to 4-byte big-endian
-    put numToChar((tBlockIndex bitShift 24) bitAnd 255) into tBlockBytes
-    put numToChar((tBlockIndex bitShift 16) bitAnd 255) after tBlockBytes
-    put numToChar((tBlockIndex bitShift 8) bitAnd 255) after tBlockBytes
-    put numToChar(tBlockIndex bitAnd 255) after tBlockBytes
+    -- Using arithmetic instead of function calls to avoid operator conflicts
+    put numToChar((tBlockIndex div 16777216) mod 256) into tBlockBytes  -- Byte 1 (bits 24-31)
+    put numToChar((tBlockIndex div 65536) mod 256) after tBlockBytes     -- Byte 2 (bits 16-23)
+    put numToChar((tBlockIndex div 256) mod 256) after tBlockBytes       -- Byte 3 (bits 8-15)
+    put numToChar(tBlockIndex mod 256) after tBlockBytes                 -- Byte 4 (bits 0-7)
 
     -- U_1 = PRF(Password, Salt || INT(i))
     put hmacSHA256(pSalt & tBlockBytes, pPassword) into tU
