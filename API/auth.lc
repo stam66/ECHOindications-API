@@ -130,7 +130,18 @@ function handleLogin pPostData
     write ("Hashes match: " & (toLower(tComputedHashValue) = toLower(tStoredHash)) & return) to stderr
 
     revCloseDatabase tConnectionID
-    return jsonError("Invalid username or password")
+
+    -- TEMPORARY DEBUG: Include diagnostic info in error response
+    put "Salt length: " & the length of tSalt into tDebugInfo["salt_len"]
+    put "Hash length: " & the length of tStoredHash into tDebugInfo["hash_len"]
+    put "Full hash length: " & the length of tFullHash into tDebugInfo["full_hash_len"]
+    put char 1 to 10 of tSalt into tDebugInfo["salt_preview"]
+    put char 1 to 10 of tStoredHash into tDebugInfo["hash_preview"]
+    put (":" is in tStoredHash) into tDebugInfo["hash_has_colon"]
+    put tDebugInfo into tErrorResult["debug"]
+    put "Invalid username or password" into tErrorResult["message"]
+    put "error" into tErrorResult["status"]
+    return JSONStringify(tErrorResult)
   end if
 
   -- Password verified with PBKDF2
