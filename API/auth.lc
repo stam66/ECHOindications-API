@@ -117,17 +117,17 @@ function handleLogin pPostData
 
   if not verifyPassword(tPassword, tFullHash) then
     -- Additional debug on failure
-    put "LOGIN FAILED for user: " & tUsername & return to stderr
-    put "Attempting manual hash computation..." & return to stderr
+    write ("LOGIN FAILED for user: " & tUsername & return) to stderr
+    write ("Attempting manual hash computation..." & return) to stderr
 
     -- Try to compute the hash manually to see what we get
     put hashPassword(tPassword, tSalt) into tComputedFullHash
     set the itemDelimiter to ":"
     put item 2 of tComputedFullHash into tComputedHashValue
 
-    put "Computed hash (first 20): " & char 1 to 20 of tComputedHashValue & return to stderr
-    put "Stored hash (first 20): " & char 1 to 20 of tStoredHash & return to stderr
-    put "Hashes match: " & (toLower(tComputedHashValue) = toLower(tStoredHash)) & return to stderr
+    write ("Computed hash (first 20): " & char 1 to 20 of tComputedHashValue & return) to stderr
+    write ("Stored hash (first 20): " & char 1 to 20 of tStoredHash & return) to stderr
+    write ("Hashes match: " & (toLower(tComputedHashValue) = toLower(tStoredHash)) & return) to stderr
 
     revCloseDatabase tConnectionID
     return jsonError("Invalid username or password")
