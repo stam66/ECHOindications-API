@@ -459,10 +459,8 @@ function checkRateLimit pConnectionID, pIP, pEndpoint, pMaxAttempts, pWindowSeco
   put revDataFromQuery(tab, return, pConnectionID, tSQL) into tData
 
   if tData begins with "revdberr" or tData is empty then
-    -- No existing record, create one
-    put "INSERT INTO rate_limit (ip_address, endpoint, attempts, last_attempt) VALUES ('" & tSafeIP & "', '" & tSafeEndpoint & "', 1, NOW())" into tSQL
-    revExecuteSQL pConnectionID, tSQL
-    return empty  -- Allow request
+    -- No existing record - allow request (don't create record until failure)
+    return empty
   end if
 
   -- Parse existing record
@@ -475,21 +473,42 @@ function checkRateLimit pConnectionID, pIP, pEndpoint, pMaxAttempts, pWindowSeco
     return "Too many requests. Please try again later."
   end if
 
-  -- Increment attempts
-  add 1 to tAttempts
-
-  if tAttempts > pMaxAttempts then
+  -- Check if attempts exceed max (but don't increment here - that's done on failure)
+  if tAttempts >= pMaxAttempts then
     -- Lock the IP for the window duration
-    put "UPDATE rate_limit SET attempts =" && tAttempts & ", last_attempt = NOW(), locked_until = DATE_ADD(NOW(), INTERVAL" && pWindowSeconds && "SECOND) WHERE ip_address = '" & tSafeIP & "' AND endpoint = '" & tSafeEndpoint & "'" into tSQL
+    put "UPDATE rate_limit SET locked_until = DATE_ADD(NOW(), INTERVAL" && pWindowSeconds && "SECOND) WHERE ip_address = '" & tSafeIP & "' AND endpoint = '" & tSafeEndpoint & "'" into tSQL
     revExecuteSQL pConnectionID, tSQL
     return "Too many requests. Please try again later."
-  else
-    -- Update attempts
-    put "UPDATE rate_limit SET attempts =" && tAttempts & ", last_attempt = NOW() WHERE ip_address = '" & tSafeIP & "' AND endpoint = '" & tSafeEndpoint & "'" into tSQL
-    revExecuteSQL pConnectionID, tSQL
-    return empty  -- Allow request
   end if
+
+  return empty  -- Allow request
 end checkRateLimit
+
+
+-- Record a failed attempt for rate limiting
+-- Call this ONLY after a failed login attempt
+-- Parameters:
+--   pConnectionID (Integer) - Database connection ID
+--   pIP (String) - Client IP address
+--   pEndpoint (String) - Endpoint name
+on recordFailedAttempt pConnectionID, pIP, pEndpoint
+  put sqlEscape(pIP) into tSafeIP
+  put sqlEscape(pEndpoint) into tSafeEndpoint
+
+  -- Check if record exists
+  put "SELECT attempts FROM rate_limit WHERE ip_address = '" & tSafeIP & "' AND endpoint = '" & tSafeEndpoint & "'" into tSQL
+  put revDataFromQuery(tab, return, pConnectionID, tSQL) into tData
+
+  if tData begins with "revdberr" or tData is empty then
+    -- No existing record, create one with 1 attempt
+    put "INSERT INTO rate_limit (ip_address, endpoint, attempts, last_attempt) VALUES ('" & tSafeIP & "', '" & tSafeEndpoint & "', 1, NOW())" into tSQL
+    revExecuteSQL pConnectionID, tSQL
+  else
+    -- Increment existing record
+    put "UPDATE rate_limit SET attempts = attempts + 1, last_attempt = NOW() WHERE ip_address = '" & tSafeIP & "' AND endpoint = '" & tSafeEndpoint & "'" into tSQL
+    revExecuteSQL pConnectionID, tSQL
+  end if
+end recordFailedAttempt
 
 
 -- Reset rate limit for an IP address (useful after successful login)
