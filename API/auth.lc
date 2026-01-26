@@ -67,6 +67,7 @@ function handleLogin pPostData
   put revDataFromQuery(tab, return, tConnectionID, tSQL) into tUserData
 
   if tUserData begins with "revdberr" or tUserData is empty then
+    recordFailedAttempt tConnectionID, tClientIP, "login"
     revCloseDatabase tConnectionID
     return jsonError("Invalid username or password")
   end if
@@ -75,6 +76,7 @@ function handleLogin pPostData
 
   -- Check if user is active
   if tUserData[7] is not 1 then
+    recordFailedAttempt tConnectionID, tClientIP, "login"
     revCloseDatabase tConnectionID
     return jsonError("User account is inactive")
   end if
@@ -98,6 +100,7 @@ function handleLogin pPostData
   end if
 
   if not verifyPassword(tPassword, tFullHash) then
+    recordFailedAttempt tConnectionID, tClientIP, "login"
     revCloseDatabase tConnectionID
     return jsonError("Invalid username or password")
   end if
