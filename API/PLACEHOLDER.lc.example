@@ -232,7 +232,7 @@ function handleCreatePLACEHOLDER pConnectionID, pPostData, pAuthPayload
 
   revExecuteSQL pConnectionID, tSQL
 
-  if the result is not empty then
+  if the result begins with "revdberr" then
     return jsonError("Failed to create record: " & the result)
   end if
 
@@ -320,7 +320,7 @@ function handleUpdatePLACEHOLDER pConnectionID, pPostData, pAuthPayload
 
   revExecuteSQL pConnectionID, tSQL
 
-  if the result is not empty then
+  if the result begins with "revdberr" then
     return jsonError("Failed to update record: " & the result)
   end if
 
@@ -367,7 +367,7 @@ function handleDeletePLACEHOLDER pConnectionID, pID, pAuthPayload
 
   revExecuteSQL pConnectionID, tSQL
 
-  if the result is not empty then
+  if the result begins with "revdberr" then
     return jsonError("Failed to delete record: " & the result)
   end if
 

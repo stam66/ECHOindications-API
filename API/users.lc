@@ -128,12 +128,14 @@ function handleDeleteUser pConnectionID, pID
   
   put "UPDATE users SET is_active = 0, updated_at = NOW() WHERE id =" && tSafeID into tSQL
   revExecuteSQL pConnectionID, tSQL
-  
-  if the result is not empty then
-    return jsonError(the result)
+
+  -- revExecuteSQL returns affected row count on success, or error string on failure
+  put the result into tResult
+  if tResult begins with "revdberr" then
+    return jsonError(tResult)
   else
-    put "User deactivated successfully" into tResult
-    return jsonSuccess(tResult)
+    put "User deactivated successfully" into tSuccessMsg
+    return jsonSuccess(tSuccessMsg)
   end if
 end handleDeleteUser
 ?>
