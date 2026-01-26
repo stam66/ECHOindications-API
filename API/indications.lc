@@ -569,9 +569,11 @@ function handleDeleteIndication pConnectionID, pID, pUsername
   
   put "DELETE FROM indications WHERE id =" && tSafeID into tSQL2
   revExecuteSQL pConnectionID, tSQL2
-  
-  if the result is not empty then
-    return jsonError(the result)
+
+  -- revExecuteSQL returns affected row count on success, or error string on failure
+  put the result into tDelResult
+  if tDelResult begins with "revdberr" then
+    return jsonError(tDelResult)
   end if
   
   put sqlEscape(pUsername) into tSafeUser
