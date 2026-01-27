@@ -50,4 +50,37 @@ end getDBPassword
 function getJWTSecret
   return "YOUR-SECRET-KEY-GENERATED WITH TERMINAL: openssl rand -base64 64 | tr -d '\n'  "
 end getJWTSecret
+
+
+-- ============================================================================
+-- MAILJET EMAIL CONFIGURATION
+-- ============================================================================
+-- WARNING: This file contains your MailJet API credentials
+-- DO NOT commit this file to Git
+-- Get your API keys from: https://app.mailjet.com/account/api_keys
+-- ============================================================================
+
+-- Return MailJet API key
+-- Returns: String - MailJet API key (public key)
+function getMailJetAPIKey
+  return "YOUR-MAILJET-API-KEY"
+end getMailJetAPIKey
+
+-- Return MailJet API secret
+-- Returns: String - MailJet API secret (private key)
+function getMailJetAPISecret
+  return "YOUR-MAILJET-API-SECRET"
+end getMailJetAPISecret
+
+-- Return sender email address
+-- Returns: String - Email address configured as sender in MailJet
+function getMailJetSenderEmail
+  return "info@yourdomain.com"
+end getMailJetSenderEmail
+
+-- Return sender name
+-- Returns: String - Display name for sender
+function getMailJetSenderName
+  return "Your App Name"
+end getMailJetSenderName
 ?>

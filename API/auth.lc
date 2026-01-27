@@ -18,8 +18,14 @@ on startup
     case "refresh"
       put handleRefresh() into tResponse
       break
+    case "requestReset"
+      put handleRequestReset(tPostData) into tResponse
+      break
+    case "changePassword"
+      put handleChangePassword(tPostData) into tResponse
+      break
     default
-      put jsonError("Invalid action. Use: login, refresh") into tResponse
+      put jsonError("Invalid action. Use: login, refresh, requestReset, changePassword") into tResponse
   end switch
 
   put tResponse
@@ -62,8 +68,8 @@ function handleLogin pPostData
     return jsonError(tRateLimitError)
   end if
 
-  -- Get user from database
-  put "SELECT id, username, password_hash, email, name, password_salt, is_active FROM users WHERE username = '" & sqlEscape(tUsername) & "'" into tSQL
+  -- Get user from database (including OTP flag for password reset flow)
+  put "SELECT id, username, password_hash, email, name, password_salt, is_active, OTP FROM users WHERE username = '" & sqlEscape(tUsername) & "'" into tSQL
   put revDataFromQuery(tab, return, tConnectionID, tSQL) into tUserData
 
   if tUserData begins with "revdberr" or tUserData is empty then
@@ -128,6 +134,13 @@ function handleLogin pPostData
   put tUserData[5] into tResult["user"]["name"]
   put tUserData[4] into tResult["user"]["email"]
 
+  -- Check if this is a one-time password (OTP = 1 means password needs to be changed)
+  if tUserData[8] is "1" then
+    put true into tResult["password_expired"]
+  else
+    put false into tResult["password_expired"]
+  end if
+
   revCloseDatabase tConnectionID
 
   return jsonSuccess(tResult)
@@ -152,4 +165,166 @@ function handleRefresh
 
   return jsonSuccess(tResult)
 end handleRefresh
+
+
+-- Handle password reset request
+-- Generates OTP, updates user record, sends email via MailJet
+function handleRequestReset pPostData
+  if pPostData is empty then
+    return jsonError("No data provided")
+  end if
+
+  -- Parse JSON
+  put JSONParser(pPostData) into tData
+
+  if tData is not an array then
+    return jsonError("Invalid JSON format")
+  end if
+
+  put tData["email"] into tEmail
+
+  if tEmail is empty then
+    return jsonError("Email address required")
+  end if
+
+  -- Validate email format
+  if not isValidEmail(tEmail) then
+    return jsonError("Invalid email format")
+  end if
+
+  -- Connect to database
+  put dbConnect() into tConnectionID
+  if tConnectionID begins with "ERROR:" then
+    return jsonError(tConnectionID)
+  end if
+
+  -- Check rate limiting for password reset requests (3 attempts per 15 minutes)
+  put getClientIP() into tClientIP
+  put checkRateLimit(tConnectionID, tClientIP, "reset", 3, 900) into tRateLimitError
+
+  if tRateLimitError is not empty then
+    revCloseDatabase tConnectionID
+    put header "Status: 429 Too Many Requests"
+    return jsonError(tRateLimitError)
+  end if
+
+  -- Check if email exists in users table
+  put "SELECT id, username, email, name FROM users WHERE email = '" & sqlEscape(tEmail) & "' AND is_active = 1" into tSQL
+  put revDataFromQuery(tab, return, tConnectionID, tSQL) into tUserData
+
+  if tUserData begins with "revdberr" or tUserData is empty then
+    -- Don't reveal if email exists or not (security best practice)
+    -- But still record the attempt for rate limiting
+    recordFailedAttempt tConnectionID, tClientIP, "reset"
+    revCloseDatabase tConnectionID
+    -- Return success message even if email not found (prevents enumeration)
+    return jsonSuccess("If this email is registered, a password reset link will be sent.")
+  end if
+
+  split tUserData by tab
+  put tUserData[1] into tUserID
+  put tUserData[2] into tUsername
+
+  -- Generate 8-character random OTP
+  put generateRandomString(8) into tOTP
+
+  -- Hash the OTP with PBKDF2 (same as regular password)
+  put generateSalt() into tSalt
+  put hashPassword(tOTP, tSalt) into tHashedPassword
+
+  -- Extract just the hash part (format is "salt:hash")
+  set the itemDelimiter to ":"
+  put item 2 of tHashedPassword into tHash
+
+  -- Update user record: set password_hash, password_salt, OTP = 1
+  put "UPDATE users SET password_hash = '" & sqlEscape(tHash) & "', password_salt = '" & sqlEscape(tSalt) & "', OTP = 1, updated_at = NOW() WHERE id = " & tUserID into tSQL
+  revExecuteSQL tConnectionID, tSQL
+
+  put the result into tResult
+  if tResult begins with "revdberr" then
+    revCloseDatabase tConnectionID
+    return jsonError("Failed to update password")
+  end if
+
+  -- Send email via MailJet
+  put "Your one-time password for ECHOIndications" into tSubject
+  put "Your one-time password is:      " & tOTP & return & return & "After logging in with this password you will be asked to create a new password." into tMessage
+
+  put sendMailJetEmail(tEmail, tSubject, tMessage) into tEmailResult
+
+  if tEmailResult is not empty then
+    -- Email failed, but password was already changed - log error but don't expose to user
+    -- In production, you might want to revert the password change or queue for retry
+    revCloseDatabase tConnectionID
+    return jsonError("Failed to send reset email. Please try again later.")
+  end if
+
+  -- Reset rate limit on successful request
+  resetRateLimit tConnectionID, tClientIP, "reset"
+
+  revCloseDatabase tConnectionID
+
+  return jsonSuccess("If this email is registered, a password reset link will be sent.")
+end handleRequestReset
+
+
+-- Handle password change (after OTP login)
+-- Requires authentication - user must be logged in with OTP
+function handleChangePassword pPostData
+  -- Require authentication
+  put requireAuth() into tPayload
+
+  if pPostData is empty then
+    return jsonError("No data provided")
+  end if
+
+  -- Parse JSON
+  put JSONParser(pPostData) into tData
+
+  if tData is not an array then
+    return jsonError("Invalid JSON format")
+  end if
+
+  put tData["new_password"] into tNewPassword
+
+  if tNewPassword is empty then
+    return jsonError("New password required")
+  end if
+
+  -- Validate password length (minimum 8 characters recommended)
+  if the length of tNewPassword < 8 then
+    return jsonError("Password must be at least 8 characters long")
+  end if
+
+  -- Connect to database
+  put dbConnect() into tConnectionID
+  if tConnectionID begins with "ERROR:" then
+    return jsonError(tConnectionID)
+  end if
+
+  -- Get user ID from token payload
+  put tPayload["user_id"] into tUserID
+
+  -- Hash the new password with PBKDF2
+  put generateSalt() into tSalt
+  put hashPassword(tNewPassword, tSalt) into tHashedPassword
+
+  -- Extract just the hash part (format is "salt:hash")
+  set the itemDelimiter to ":"
+  put item 2 of tHashedPassword into tHash
+
+  -- Update user record: set new password_hash, password_salt, OTP = 0
+  put "UPDATE users SET password_hash = '" & sqlEscape(tHash) & "', password_salt = '" & sqlEscape(tSalt) & "', OTP = 0, updated_at = NOW() WHERE id = " & tUserID into tSQL
+  revExecuteSQL tConnectionID, tSQL
+
+  put the result into tResult
+  if tResult begins with "revdberr" then
+    revCloseDatabase tConnectionID
+    return jsonError("Failed to update password")
+  end if
+
+  revCloseDatabase tConnectionID
+
+  return jsonSuccess("Password updated successfully")
+end handleChangePassword
 ?>
