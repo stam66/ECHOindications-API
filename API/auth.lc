@@ -52,9 +52,9 @@ function handleLogin pPostData
     return jsonError(tConnectionID)
   end if
 
-  -- Check rate limiting: 5 attempts per 15 minutes (900 seconds)
+  -- Check rate limiting: 7 failed attempts per 15 minutes (900 seconds)
   put getClientIP() into tClientIP
-  put checkRateLimit(tConnectionID, tClientIP, "login", 5, 900) into tRateLimitError
+  put checkRateLimit(tConnectionID, tClientIP, "login", 7, 900) into tRateLimitError
 
   if tRateLimitError is not empty then
     revCloseDatabase tConnectionID
