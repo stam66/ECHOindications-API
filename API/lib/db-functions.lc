@@ -823,7 +823,7 @@ function base64URLDecode pData
   -- Convert back from URL-safe
   replace "-" with "+" in pData
   replace "_" with "/" in pData
-  
+
   -- Add padding if needed
   put the length of pData mod 4 into tMod
   if tMod is 2 then
@@ -831,7 +831,122 @@ function base64URLDecode pData
   else if tMod is 3 then
     put "=" after pData
   end if
-  
+
   return base64Decode(pData)
 end base64URLDecode
+
+
+-- ============================================================================
+-- EMAIL FUNCTIONS (MailJet API)
+-- ============================================================================
+
+-- Generate random alphanumeric string for OTP
+-- Parameters: pLength (Integer) - Length of string to generate
+-- Returns: Random alphanumeric string
+function generateRandomString pLength
+  put "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789" into tChars
+  put empty into tResult
+
+  repeat pLength times
+    put random(62) into tPos
+    put char tPos of tChars after tResult
+  end repeat
+
+  return tResult
+end generateRandomString
+
+
+-- Validate email format
+-- Parameters: pEmail (String) - Email address to validate
+-- Returns: true if valid format, false otherwise
+function isValidEmail pEmail
+  -- Basic email validation using regex pattern
+  -- Checks for: something@something.something
+  put matchText(pEmail, "^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$") into tIsValid
+  return tIsValid
+end isValidEmail
+
+
+-- Send email via MailJet API v3.1
+-- Parameters:
+--   pToEmail (String) - Recipient email address
+--   pSubject (String) - Email subject
+--   pMessage (String) - Email body (plain text)
+-- Returns: Empty string on success, error message on failure
+function sendMailJetEmail pToEmail, pSubject, pMessage
+  -- Get MailJet credentials from settings
+  put getMailJetAPIKey() into tAPIKey
+  put getMailJetAPISecret() into tAPISecret
+  put getMailJetSenderEmail() into tFromEmail
+  put getMailJetSenderName() into tFromName
+
+  -- Validate credentials are configured
+  if tAPIKey is empty or tAPIKey contains "YOUR-" then
+    return "ERROR: MailJet API key not configured"
+  end if
+
+  if tAPISecret is empty or tAPISecret contains "YOUR-" then
+    return "ERROR: MailJet API secret not configured"
+  end if
+
+  -- Escape special characters in JSON strings
+  replace "\" with "\\" in pSubject
+  replace quote with "\" & quote in pSubject
+  replace return with "\n" in pSubject
+
+  replace "\" with "\\" in pMessage
+  replace quote with "\" & quote in pMessage
+  replace return with "\n" in pMessage
+
+  -- Build JSON payload for MailJet API v3.1
+  put "{" into tJSON
+  put quote & "Messages" & quote & ": [{" after tJSON
+  put quote & "From" & quote & ": {" after tJSON
+  put quote & "Email" & quote & ": " & quote & tFromEmail & quote & "," after tJSON
+  put quote & "Name" & quote & ": " & quote & tFromName & quote after tJSON
+  put "}," after tJSON
+  put quote & "To" & quote & ": [{" after tJSON
+  put quote & "Email" & quote & ": " & quote & pToEmail & quote after tJSON
+  put "}]," after tJSON
+  put quote & "Subject" & quote & ": " & quote & pSubject & quote & "," after tJSON
+  put quote & "TextPart" & quote & ": " & quote & pMessage & quote after tJSON
+  put "}]}" after tJSON
+
+  -- Build Basic Auth header
+  put tAPIKey & ":" & tAPISecret into tCredentials
+  put base64Encode(tCredentials) into tAuthEncoded
+  -- Remove any line breaks from base64 encoding
+  replace return with empty in tAuthEncoded
+  replace linefeed with empty in tAuthEncoded
+
+  -- Use tsNet library if available, otherwise use libUrl
+  -- Note: LiveCode Server typically uses libUrl for HTTP requests
+  put "https://api.mailjet.com/v3.1/send" into tURL
+
+  -- Set headers
+  set the httpHeaders to "Authorization: Basic " & tAuthEncoded & return & \
+    "Content-Type: application/json"
+
+  -- Send POST request
+  post tJSON to url tURL
+  put it into tResponse
+  put the result into tResult
+
+  -- Reset headers
+  set the httpHeaders to empty
+
+  -- Check for errors
+  if tResult is not empty then
+    return "ERROR: HTTP request failed - " & tResult
+  end if
+
+  -- Check response for success (MailJet returns JSON with Messages array)
+  if tResponse contains quote & "success" & quote then
+    return empty
+  else if tResponse contains quote & "Status" & quote & ":" & quote & "success" & quote then
+    return empty
+  else
+    return "ERROR: MailJet API error - " & tResponse
+  end if
+end sendMailJetEmail
 ?>
