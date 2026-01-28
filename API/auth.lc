@@ -59,6 +59,7 @@ function handleLogin pPostData
   end if
 
   -- Check rate limiting: 7 failed attempts per 15 minutes (900 seconds)
+  -- IMPORTANT: Uses distinct endpoint key "login" - separate from "requestReset" counter
   put getClientIP() into tClientIP
   put checkRateLimit(tConnectionID, tClientIP, "login", 7, 900) into tRateLimitError
 
@@ -199,8 +200,9 @@ function handleRequestReset pPostData
   end if
 
   -- Check rate limiting for password reset requests (3 attempts per 15 minutes)
+  -- IMPORTANT: Uses distinct endpoint key "requestReset" to prevent sharing counter with login attempts
   put getClientIP() into tClientIP
-  put checkRateLimit(tConnectionID, tClientIP, "reset", 3, 900) into tRateLimitError
+  put checkRateLimit(tConnectionID, tClientIP, "requestReset", 3, 900) into tRateLimitError
 
   if tRateLimitError is not empty then
     revCloseDatabase tConnectionID
@@ -215,7 +217,7 @@ function handleRequestReset pPostData
   if tUserData begins with "revdberr" or tUserData is empty then
     -- Don't reveal if email exists or not (security best practice)
     -- But still record the attempt for rate limiting
-    recordFailedAttempt tConnectionID, tClientIP, "reset"
+    recordFailedAttempt tConnectionID, tClientIP, "requestReset"
     revCloseDatabase tConnectionID
     -- Return success message even if email not found (prevents enumeration)
     return jsonSuccess("If this email is registered, a password reset link will be sent.")
@@ -260,7 +262,7 @@ function handleRequestReset pPostData
   end if
 
   -- Reset rate limit on successful request
-  resetRateLimit tConnectionID, tClientIP, "reset"
+  resetRateLimit tConnectionID, tClientIP, "requestReset"
 
   revCloseDatabase tConnectionID
 
