@@ -47,38 +47,28 @@ end startup
 startup
 
 function handleListChanges pConnectionID
-  put "SELECT c.id, c.Indication_id, ind.title as indication_title," into tSQL
-  put " c.changes_requestor, u.name as reporter_name," after tSQL
-  put " c.changes_request, c.changes_status, c.reason_for_close," after tSQL
-  put " c.created_at" after tSQL
-  put " FROM changes c" after tSQL
-  put " LEFT JOIN indications ind ON c.Indication_id = ind.id" after tSQL
-  put " LEFT JOIN users u ON c.changes_requestor = u.username" after tSQL
-  put " ORDER BY FIELD(c.changes_status, 'New', 'In progress', 'Closed'), c.created_at DESC" after tSQL
-  
+  put "SELECT c.id, c.changes_request, c.changes_requestor, c.changes_status, " & \
+      "c.created_at FROM changes c ORDER BY c.created_at DESC" into tSQL
+
   put revDataFromQuery(tab, return, pConnectionID, tSQL) into tData
-  
+
   if tData begins with "revdberr" then
     return jsonError(tData)
   end if
-  
+
   put 1 into tIndex
   repeat for each line tLine in tData
     split tLine by tab
-    
+
     put tLine[1] into tChanges[tIndex]["id"]
-    put tLine[2] into tChanges[tIndex]["indication_id"]
-    put tLine[3] into tChanges[tIndex]["indication_title"]
-    put tLine[4] into tChanges[tIndex]["reported_by"]
-    put tLine[5] into tChanges[tIndex]["reporter_name"]
-    put tLine[6] into tChanges[tIndex]["description"]
-    put tLine[7] into tChanges[tIndex]["status"]
-    put tLine[8] into tChanges[tIndex]["resolution_notes"]
-    put tLine[9] into tChanges[tIndex]["created_at"]
-    
+    put tLine[2] into tChanges[tIndex]["changes_request"]
+    put tLine[3] into tChanges[tIndex]["changes_requestor"]
+    put tLine[4] into tChanges[tIndex]["changes_status"]
+    put tLine[5] into tChanges[tIndex]["created_at"]
+
     add 1 to tIndex
   end repeat
-  
+
   return jsonSuccess(tChanges)
 end handleListChanges
 
@@ -86,40 +76,38 @@ function handleChangesByStatus pConnectionID, pStatus
   if pStatus is empty then
     return jsonError("Status required")
   end if
-  
-  put "SELECT c.id, c.Indication_id, ind.title as indication_title," into tSQL
-  put " c.changes_requestor, u.name as reporter_name," after tSQL
-  put " c.changes_request, c.changes_status, c.reason_for_close," after tSQL
-  put " c.created_at" after tSQL
-  put " FROM changes c" after tSQL
-  put " LEFT JOIN indications ind ON c.Indication_id = ind.id" after tSQL
-  put " LEFT JOIN users u ON c.changes_requestor = u.username" after tSQL
-  put " WHERE c.changes_status = '" & sqlEscape(pStatus) & "'" after tSQL
-  put " ORDER BY c.created_at DESC" after tSQL
-  
+
+  put "SELECT c.id, c.changes_request, c.changes_requestor, c.changes_status, " & \
+      "c.created_at, c.contexts_existing, c.contexts_new, c.indication_existing, " & \
+      "c.indication_new, c.reason_for_close, c.resolution_notes " & \
+      "FROM changes c WHERE c.changes_status = '" & sqlEscape(pStatus) & "' " & \
+      "ORDER BY c.created_at DESC" into tSQL
+
   put revDataFromQuery(tab, return, pConnectionID, tSQL) into tData
-  
+
   if tData begins with "revdberr" then
     return jsonError(tData)
   end if
-  
+
   put 1 into tIndex
   repeat for each line tLine in tData
     split tLine by tab
-    
+
     put tLine[1] into tChanges[tIndex]["id"]
-    put tLine[2] into tChanges[tIndex]["indication_id"]
-    put tLine[3] into tChanges[tIndex]["indication_title"]
-    put tLine[4] into tChanges[tIndex]["reported_by"]
-    put tLine[5] into tChanges[tIndex]["reporter_name"]
-    put tLine[6] into tChanges[tIndex]["description"]
-    put tLine[7] into tChanges[tIndex]["status"]
-    put tLine[8] into tChanges[tIndex]["resolution_notes"]
-    put tLine[9] into tChanges[tIndex]["created_at"]
-    
+    put tLine[2] into tChanges[tIndex]["changes_request"]
+    put tLine[3] into tChanges[tIndex]["changes_requestor"]
+    put tLine[4] into tChanges[tIndex]["changes_status"]
+    put tLine[5] into tChanges[tIndex]["created_at"]
+    put tLine[6] into tChanges[tIndex]["contexts_existing"]
+    put tLine[7] into tChanges[tIndex]["contexts_new"]
+    put tLine[8] into tChanges[tIndex]["indication_existing"]
+    put tLine[9] into tChanges[tIndex]["indication_new"]
+    put tLine[10] into tChanges[tIndex]["reason_for_close"]
+    put tLine[11] into tChanges[tIndex]["resolution_notes"]
+
     add 1 to tIndex
   end repeat
-  
+
   return jsonSuccess(tChanges)
 end handleChangesByStatus
 
@@ -127,40 +115,38 @@ function handleReadChange pConnectionID, pID
   if pID is empty then
     return jsonError("Change ID required")
   end if
-  
+
   -- Validate ID to prevent SQL injection
   put validateNumericID(pID) into tSafeID
   if tSafeID is empty then
     return jsonError("Invalid change ID")
   end if
-  
-  put "SELECT c.id, c.Indication_id, ind.title as indication_title," into tSQL
-  put " c.changes_requestor, u.name as reporter_name," after tSQL
-  put " c.changes_request, c.changes_status, c.reason_for_close," after tSQL
-  put " c.created_at" after tSQL
-  put " FROM changes c" after tSQL
-  put " LEFT JOIN indications ind ON c.Indication_id = ind.id" after tSQL
-  put " LEFT JOIN users u ON c.changes_requestor = u.username" after tSQL
-  put " WHERE c.id =" && tSafeID after tSQL
-  
+
+  put "SELECT c.id, c.changes_request, c.changes_requestor, c.changes_status, " & \
+      "c.created_at, c.contexts_existing, c.contexts_new, c.indication_existing, " & \
+      "c.indication_new, c.reason_for_close, c.resolution_notes " & \
+      "FROM changes c WHERE c.id =" && tSafeID into tSQL
+
   put revDataFromQuery(tab, return, pConnectionID, tSQL) into tData
-  
+
   if tData begins with "revdberr" or tData is empty then
     return jsonError("Change not found")
   end if
-  
+
   split tData by tab
-  
+
   put tData[1] into tChange["id"]
-  put tData[2] into tChange["indication_id"]
-  put tData[3] into tChange["indication_title"]
-  put tData[4] into tChange["reported_by"]
-  put tData[5] into tChange["reporter_name"]
-  put tData[6] into tChange["description"]
-  put tData[7] into tChange["status"]
-  put tData[8] into tChange["resolution_notes"]
-  put tData[9] into tChange["created_at"]
-  
+  put tData[2] into tChange["changes_request"]
+  put tData[3] into tChange["changes_requestor"]
+  put tData[4] into tChange["changes_status"]
+  put tData[5] into tChange["created_at"]
+  put tData[6] into tChange["contexts_existing"]
+  put tData[7] into tChange["contexts_new"]
+  put tData[8] into tChange["indication_existing"]
+  put tData[9] into tChange["indication_new"]
+  put tData[10] into tChange["reason_for_close"]
+  put tData[11] into tChange["resolution_notes"]
+
   return jsonSuccess(tChange)
 end handleReadChange
 
